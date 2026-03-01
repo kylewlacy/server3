@@ -53,13 +53,21 @@ pub struct CacheConfig {
     pub max_disk_capacity: bytesize::ByteSize,
 
     /// Minimum number of file descriptors that should be used for the cache.
-    ///
-    /// The _maximum_ number of cache file descriptors is derived from the
-    /// process's rlimits and `min_non_cache_files`, so setting this value
-    /// ensures a lower bound. If the soft rlimit is too low, we'll try to raise
-    /// the soft rlimit, or we'll fail with an error.
+    /// This influences the default value for [Self::max_cache_files].
     #[serde(default = "default_min_cache_files")]
     pub min_cache_files: u64,
+
+    /// Maximum number of file descriptors that should be used to cache objects.
+    ///
+    /// When not set, the maximum number of cache files is set based on the
+    /// process's `NOFILE` rlimit, but it reserves enough space for
+    /// [`Self::min_non_cached_files`] and enforces [`Self::min_cache_files`]
+    /// as a lower bound.
+    ///
+    /// Whether set by default or set explicitly, we'll attempt to raise the
+    /// process's soft `NOFILE` rlimit if needed (or otherwise we'll fail with
+    /// a hard error).
+    pub max_cache_files: Option<u64>,
 
     /// Minimum number of file descriptors that should _not_ be used for the
     /// cache (for TCP sockets, etc.).
@@ -72,6 +80,7 @@ impl Default for CacheConfig {
         Self {
             dir: default_cache_dir(),
             max_disk_capacity: default_max_disk_capacity(),
+            max_cache_files: None,
             min_cache_files: default_min_cache_files(),
             min_non_cache_files: default_min_non_cache_files(),
         }

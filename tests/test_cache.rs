@@ -35,6 +35,99 @@ async fn test_cache_object() {
 }
 
 #[tokio::test]
+async fn test_cache_max_objects() {
+    let ctx = test_context();
+    let mut mock_server = mockito::Server::new_async().await;
+
+    let upstream_store = mockito_http_store(&mock_server);
+    let config = CacheConfig {
+        max_cache_files: Some(3),
+        ..cache_config(&ctx)
+    };
+    let cache = server3::store::cache::CacheStore::new(upstream_store, config).unwrap();
+
+    // Add 3 objects to the upstream cache
+    let object_1_mock = mock_server
+        .mock("GET", "/example-1.json")
+        .with_body("example 1")
+        .expect(1)
+        .create();
+    let object_2_mock = mock_server
+        .mock("GET", "/example-2.json")
+        .with_body("example 2")
+        .expect(1)
+        .create();
+    let object_3_mock = mock_server
+        .mock("GET", "/example-3.json")
+        .with_body("example 3")
+        .expect(1)
+        .create();
+
+    // Query each upstream object 5 times
+    for _ in 0..5 {
+        let object = cache.get_object("example-1.json").await.unwrap().unwrap();
+        assert_eq!(body_to_string(object).await, "example 1");
+
+        let object = cache.get_object("example-2.json").await.unwrap().unwrap();
+        assert_eq!(body_to_string(object).await, "example 2");
+
+        let object = cache.get_object("example-3.json").await.unwrap().unwrap();
+        assert_eq!(body_to_string(object).await, "example 3");
+    }
+
+    // At this point, object 1 is the least-recently used, followed by
+    // object 2, then object 3
+
+    // Assert that each upstream project was fetched exactly once
+    object_1_mock.assert_async().await;
+    object_2_mock.assert_async().await;
+    object_3_mock.assert_async().await;
+
+    // Now, remove the upstream mocks
+    object_1_mock.remove_async().await;
+    object_2_mock.remove_async().await;
+    object_3_mock.remove_async().await;
+    drop(object_1_mock);
+    drop(object_2_mock);
+    drop(object_3_mock);
+
+    // Add object 4 and 5 upstream, and add object 1 with a different body
+    let object_4_mock = mock_server
+        .mock("GET", "/example-4.json")
+        .with_body("example 4")
+        .expect(1)
+        .create();
+    let object_5_mock = mock_server
+        .mock("GET", "/example-5.json")
+        .with_body("example 5")
+        .expect(1)
+        .create();
+    let object_1_mock = mock_server
+        .mock("GET", "/example-1.json")
+        .with_body("example 1 new!")
+        .expect(1)
+        .create();
+
+    // Fetch object 4, which should evict object 1 from the cache
+    let project_source = cache.get_object("example-4.json").await.unwrap().unwrap();
+    assert_eq!(body_to_string(project_source).await, "example 4");
+
+    // Fetch object 5, which should evict object 2 from the cache
+    let project_source = cache.get_object("example-5.json").await.unwrap().unwrap();
+    assert_eq!(body_to_string(project_source).await, "example 5");
+
+    // Fetch object 1 again, which should evict object 3 from the cache
+    let project_source = cache.get_object("example-1.json").await.unwrap().unwrap();
+    assert_eq!(body_to_string(project_source).await, "example 1 new!");
+
+    // Objects 4 and 5 should've been fetched once, and object 1 should've
+    // been fetched again since it was evicted
+    object_4_mock.assert_async().await;
+    object_5_mock.assert_async().await;
+    object_1_mock.assert_async().await;
+}
+
+#[tokio::test]
 async fn test_cache_max_disk_capacity() {
     let ctx = test_context();
     let mut mock_server = mockito::Server::new_async().await;

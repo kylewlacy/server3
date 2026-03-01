@@ -26,10 +26,16 @@ impl<S> CacheStore<S> {
         let (original_soft_limit, hard_limit) =
             rlimit::getrlimit(rlimit::Resource::NOFILE).context("failed to get rlimit")?;
 
-        let min_soft_limit = config
-            .min_non_cache_files
-            .checked_add(config.min_cache_files.max(1))
-            .unwrap();
+        let min_soft_limit = if let Some(max_cache_files) = config.max_cache_files {
+            max_cache_files
+                .checked_add(config.min_non_cache_files)
+                .unwrap()
+        } else {
+            config
+                .min_non_cache_files
+                .checked_add(config.min_cache_files.max(1))
+                .unwrap()
+        };
 
         anyhow::ensure!(
             min_soft_limit <= hard_limit,
@@ -51,7 +57,9 @@ impl<S> CacheStore<S> {
             original_soft_limit
         };
 
-        let max_cache_files = soft_limit.checked_sub(config.min_non_cache_files).unwrap();
+        let max_cache_files = config
+            .max_cache_files
+            .unwrap_or_else(|| soft_limit.checked_sub(config.min_non_cache_files).unwrap());
         let max_cache_files: usize = max_cache_files.try_into().unwrap();
 
         tracing::info!(

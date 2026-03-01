@@ -220,42 +220,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "812e12b5285cc515a9c72a5c1d3b6d46a19dac5acfef5265968c166106e31dd3"
 
 [[package]]
-name = "brioche-cache-server"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "async-trait",
- "axum",
- "bytes",
- "bytesize",
- "clap",
- "figment",
- "futures",
- "hex",
- "http-body",
- "humantime-serde",
- "lru",
- "metrics",
- "metrics-exporter-prometheus",
- "mockito",
- "pin-project-lite",
- "reqwest",
- "rlimit",
- "serde",
- "tempfile",
- "thiserror 2.0.17",
- "tokio",
- "tokio-stream",
- "tokio-util",
- "tower",
- "tower-http",
- "tracing",
- "tracing-subscriber",
- "url",
- "uuid",
-]
-
-[[package]]
 name = "bumpalo"
 version = "3.19.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1760,6 +1724,42 @@ dependencies = [
  "itoa",
  "ryu",
  "serde",
+]
+
+[[package]]
+name = "server3"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "async-trait",
+ "axum",
+ "bytes",
+ "bytesize",
+ "clap",
+ "figment",
+ "futures",
+ "hex",
+ "http-body",
+ "humantime-serde",
+ "lru",
+ "metrics",
+ "metrics-exporter-prometheus",
+ "mockito",
+ "pin-project-lite",
+ "reqwest",
+ "rlimit",
+ "serde",
+ "tempfile",
+ "thiserror 2.0.17",
+ "tokio",
+ "tokio-stream",
+ "tokio-util",
+ "tower",
+ "tower-http",
+ "tracing",
+ "tracing-subscriber",
+ "url",
+ "uuid",
 ]
 
 [[package]]

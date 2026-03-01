@@ -1,4 +1,4 @@
-use brioche_cache_server::{
+use server3::{
     config::CacheConfig,
     models::{BakeOutput, ProjectSource},
     store::Store as _,
@@ -16,9 +16,7 @@ async fn test_cache_chunk() {
     let mut mock_server = mockito::Server::new_async().await;
 
     let upstream_store = mockito_http_store(&mock_server);
-    let cache =
-        brioche_cache_server::store::cache::CacheStore::new(upstream_store, cache_config(&ctx))
-            .unwrap();
+    let cache = server3::store::cache::CacheStore::new(upstream_store, cache_config(&ctx)).unwrap();
 
     // Put a chunk in the upstream server
     let chunk_id = fake_hash_id(0x1234);
@@ -46,9 +44,7 @@ async fn test_cache_artifact() {
     let mut mock_server = mockito::Server::new_async().await;
 
     let upstream_store = mockito_http_store(&mock_server);
-    let cache =
-        brioche_cache_server::store::cache::CacheStore::new(upstream_store, cache_config(&ctx))
-            .unwrap();
+    let cache = server3::store::cache::CacheStore::new(upstream_store, cache_config(&ctx)).unwrap();
 
     // Put an artifact in the upstream server
     let artifact_id = fake_hash_id(0x1111);
@@ -84,9 +80,7 @@ async fn test_cache_project_source() {
     let mut mock_server = mockito::Server::new_async().await;
 
     let upstream_store = mockito_http_store(&mock_server);
-    let cache =
-        brioche_cache_server::store::cache::CacheStore::new(upstream_store, cache_config(&ctx))
-            .unwrap();
+    let cache = server3::store::cache::CacheStore::new(upstream_store, cache_config(&ctx)).unwrap();
 
     // Put a project source in the upstream server
     let project_id = fake_hash_id(0x4321);
@@ -126,9 +120,7 @@ async fn test_cache_bake_output() {
     let mut mock_server = mockito::Server::new_async().await;
 
     let upstream_store = mockito_http_store(&mock_server);
-    let cache =
-        brioche_cache_server::store::cache::CacheStore::new(upstream_store, cache_config(&ctx))
-            .unwrap();
+    let cache = server3::store::cache::CacheStore::new(upstream_store, cache_config(&ctx)).unwrap();
 
     // Put a project source in the upstream server
     let recipe_id = fake_hash_id(0x9876);
@@ -172,8 +164,7 @@ async fn test_cache_max_project_sources() {
         max_project_sources: 3,
         ..cache_config(&ctx)
     };
-    let cache =
-        brioche_cache_server::store::cache::CacheStore::new(upstream_store, config).unwrap();
+    let cache = server3::store::cache::CacheStore::new(upstream_store, config).unwrap();
 
     let artifact_hash_1 = fake_hash_id(0x100);
     let artifact_hash_2 = fake_hash_id(0x2000);
@@ -346,8 +337,7 @@ async fn test_cache_max_bake_outputs() {
         max_bake_outputs: 3,
         ..cache_config(&ctx)
     };
-    let cache =
-        brioche_cache_server::store::cache::CacheStore::new(upstream_store, config).unwrap();
+    let cache = server3::store::cache::CacheStore::new(upstream_store, config).unwrap();
 
     let artifact_hash_1 = fake_hash_id(0x100);
     let artifact_hash_2 = fake_hash_id(0x2000);
@@ -504,8 +494,7 @@ async fn test_cache_max_disk_capacity() {
         max_disk_capacity: bytesize::ByteSize::b(499),
         ..cache_config(&ctx)
     };
-    let cache =
-        brioche_cache_server::store::cache::CacheStore::new(upstream_store, config).unwrap();
+    let cache = server3::store::cache::CacheStore::new(upstream_store, config).unwrap();
 
     let bytes_1x100 = vec![1u8; 100];
     let bytes_2x100 = vec![2u8; 100];

@@ -2,7 +2,6 @@ use futures::StreamExt as _;
 
 use crate::{
     config::UpstreamConfig,
-    models::{BakeOutput, HashId, ProjectSource},
     store::{Store, StoreError},
 };
 
@@ -40,11 +39,8 @@ impl HttpStore {
 
 #[async_trait::async_trait]
 impl Store for HttpStore {
-    async fn get_chunk_zst(
-        &self,
-        chunk_id: HashId,
-    ) -> Result<Option<axum::body::Body>, StoreError> {
-        let url = self.url.join(&format!("chunks/{chunk_id}.zst"))?;
+    async fn get_object(&self, key: &str) -> Result<Option<axum::body::Body>, StoreError> {
+        let url = self.url.join(key)?;
 
         let response = self.reqwest.get(url).send().await?;
         if matches!(response.status(), reqwest::StatusCode::NOT_FOUND) {
@@ -53,50 +49,6 @@ impl Store for HttpStore {
 
         let response = response.error_for_status()?;
         Ok(Some(axum_body_from_reqwest_response(response)))
-    }
-
-    async fn get_artifact_bar_zst(
-        &self,
-        artifact_id: HashId,
-    ) -> Result<Option<axum::body::Body>, StoreError> {
-        let url = self.url.join(&format!("artifacts/{artifact_id}.bar.zst"))?;
-
-        let response = self.reqwest.get(url).send().await?;
-        if matches!(response.status(), reqwest::StatusCode::NOT_FOUND) {
-            return Ok(None);
-        }
-
-        let response = response.error_for_status()?;
-        Ok(Some(axum_body_from_reqwest_response(response)))
-    }
-
-    async fn get_project_source(
-        &self,
-        project_id: HashId,
-    ) -> Result<Option<ProjectSource>, StoreError> {
-        let url = self
-            .url
-            .join(&format!("projects/{project_id}/source.json"))?;
-
-        let response = self.reqwest.get(url).send().await?;
-        if matches!(response.status(), reqwest::StatusCode::NOT_FOUND) {
-            return Ok(None);
-        }
-
-        let project_source = response.error_for_status()?.json().await?;
-        Ok(project_source)
-    }
-
-    async fn get_bake_output(&self, recipe_id: HashId) -> Result<Option<BakeOutput>, StoreError> {
-        let url = self.url.join(&format!("bakes/{recipe_id}/output.json"))?;
-
-        let response = self.reqwest.get(url).send().await?;
-        if matches!(response.status(), reqwest::StatusCode::NOT_FOUND) {
-            return Ok(None);
-        }
-
-        let bake_output = response.error_for_status()?.json().await?;
-        Ok(bake_output)
     }
 }
 

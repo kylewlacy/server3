@@ -1,15 +1,7 @@
 use server3::{
     config::{CacheConfig, UpstreamConfig},
-    models::HashId,
     store::http::HttpStore,
 };
-
-pub fn fake_hash_id(n: u64) -> HashId {
-    let bytes = n.to_be_bytes();
-    let mut hash_bytes = [0; HashId::LEN];
-    hash_bytes[(HashId::LEN - bytes.len())..].copy_from_slice(&bytes);
-    HashId::from_bytes(hash_bytes)
-}
 
 pub async fn body_to_bytes(body: axum::body::Body) -> Vec<u8> {
     let bytes = axum::body::to_bytes(body, 10_000_000).await.unwrap();

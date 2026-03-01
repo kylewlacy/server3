@@ -52,14 +52,6 @@ pub struct CacheConfig {
     #[serde(default = "default_max_disk_capacity")]
     pub max_disk_capacity: bytesize::ByteSize,
 
-    /// Max project sources to keep in memory.
-    #[serde(default = "default_max_project_sources")]
-    pub max_project_sources: usize,
-
-    /// Max bake outputs to keep in memory.
-    #[serde(default = "default_max_bake_outputs")]
-    pub max_bake_outputs: usize,
-
     /// Minimum number of file descriptors that should be used for the cache.
     ///
     /// The _maximum_ number of cache file descriptors is derived from the
@@ -80,8 +72,6 @@ impl Default for CacheConfig {
         Self {
             dir: default_cache_dir(),
             max_disk_capacity: default_max_disk_capacity(),
-            max_project_sources: default_max_project_sources(),
-            max_bake_outputs: default_max_bake_outputs(),
             min_cache_files: default_min_cache_files(),
             min_non_cache_files: default_min_non_cache_files(),
         }
@@ -102,14 +92,6 @@ fn default_cache_dir() -> PathBuf {
 
 fn default_max_disk_capacity() -> bytesize::ByteSize {
     bytesize::ByteSize::gb(1)
-}
-
-fn default_max_project_sources() -> usize {
-    10_000
-}
-
-fn default_max_bake_outputs() -> usize {
-    10_000
 }
 
 fn default_min_cache_files() -> u64 {

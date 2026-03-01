@@ -11,7 +11,6 @@ use tokio::sync::{Mutex, OnceCell};
 
 use crate::{
     config::CacheConfig,
-    models::{BakeOutput, HashId, ProjectSource},
     store::{Store, StoreError},
 };
 
@@ -19,9 +18,7 @@ pub struct CacheStore<S> {
     store: S,
     cache_dir: Arc<PathBuf>,
     capacity_pool: CacheCapacityPool,
-    cached_resources: Mutex<LruCache<CacheResourceId, Arc<OnceCell<Arc<CacheFile>>>>>,
-    cached_project_sources: Mutex<LruCache<HashId, Arc<OnceCell<(ProjectSource, uuid::Uuid)>>>>,
-    cached_bake_outputs: Mutex<LruCache<HashId, Arc<OnceCell<(BakeOutput, uuid::Uuid)>>>>,
+    cached_objects: Mutex<LruCache<String, Arc<OnceCell<Arc<CacheFile>>>>>,
 }
 
 impl<S> CacheStore<S> {
@@ -73,19 +70,7 @@ impl<S> CacheStore<S> {
             store,
             capacity_pool: CacheCapacityPool::new(config.max_disk_capacity.as_u64()),
             cache_dir: Arc::new(config.dir),
-            cached_resources: Mutex::new(LruCache::new(max_cache_files.try_into().unwrap())),
-            cached_project_sources: Mutex::new(LruCache::new(
-                config
-                    .max_project_sources
-                    .try_into()
-                    .expect("max_project_sources should not be zero"),
-            )),
-            cached_bake_outputs: Mutex::new(LruCache::new(
-                config
-                    .max_bake_outputs
-                    .try_into()
-                    .expect("max_bake_outputs should not be zero"),
-            )),
+            cached_objects: Mutex::new(LruCache::new(max_cache_files.try_into().unwrap())),
         })
     }
 }
@@ -95,23 +80,18 @@ impl<S> Store for CacheStore<S>
 where
     S: Store + Send + Sync,
 {
-    async fn get_chunk_zst(
-        &self,
-        chunk_id: HashId,
-    ) -> Result<Option<axum::body::Body>, StoreError> {
+    async fn get_object(&self, key: &str) -> Result<Option<axum::body::Body>, StoreError> {
         let init_id = uuid::Uuid::new_v4();
-        let cache_key = CacheResourceId::Chunk { chunk_id };
-        let resource = cache_key.variant_label();
 
         let cell = {
-            let mut cached_resources = self.cached_resources.lock().await;
-            cached_resources
-                .get_or_insert(cache_key, || Arc::new(OnceCell::new()))
+            let mut cached_objects = self.cached_objects.lock().await;
+            cached_objects
+                .get_or_insert(key.to_string(), || Arc::new(OnceCell::new()))
                 .clone()
         };
         let result = cell
             .get_or_try_init(async || {
-                let content = match self.store.get_chunk_zst(chunk_id).await {
+                let content = match self.store.get_object(key).await {
                     Ok(Some(content)) => content,
                     Ok(None) => {
                         return Err(None);
@@ -122,7 +102,7 @@ where
                 };
                 let content = content.into_data_stream().map_err(std::io::Error::other);
                 let content = tokio_util::io::StreamReader::new(content);
-                let file = match create_cache_file(init_id, cache_key, self, content).await {
+                let file = match create_cache_file(init_id, key, self, content).await {
                     Ok(file) => file,
                     Err(err) => {
                         return Err(Some(err));
@@ -137,30 +117,22 @@ where
                 if cache_file.id == init_id {
                     // File ID matches the ID we just generated, so this was
                     // a cache miss that we've now filled in
-                    metrics::counter!("cache_misses", "resource" => resource).increment(1);
+                    metrics::counter!("cache_misses").increment(1);
                 } else {
                     // File ID does not match our ID, so the file was already
                     // populated meaning this was a cache hit
-                    metrics::counter!("cache_hits", "resource" => resource).increment(1);
+                    metrics::counter!("cache_hits").increment(1);
                 }
                 cache_file.clone()
             }
             Err(err) => {
                 match err {
                     Some(err) => {
-                        metrics::counter!(
-                            "cache_errors",
-                            "resource" => resource,
-                        )
-                        .increment(1);
+                        metrics::counter!("cache_errors").increment(1);
                         return Err(err);
                     }
                     None => {
-                        metrics::counter!(
-                            "cache_not_found_accesses",
-                            "resource" => resource,
-                        )
-                        .increment(1);
+                        metrics::counter!("cache_not_found_accesses").increment(1);
                         return Ok(None);
                     }
                 };
@@ -169,212 +141,11 @@ where
         let body = body_from_cache_file(&cache_file).await?;
         Ok(Some(axum::body::Body::new(body)))
     }
-
-    async fn get_artifact_bar_zst(
-        &self,
-        artifact_id: HashId,
-    ) -> Result<Option<axum::body::Body>, StoreError> {
-        let init_id = uuid::Uuid::new_v4();
-        let cache_key = CacheResourceId::Artifact { artifact_id };
-        let resource = cache_key.variant_label();
-
-        let cell = {
-            let mut cached_resources = self.cached_resources.lock().await;
-            cached_resources
-                .get_or_insert(cache_key, || Arc::new(OnceCell::new()))
-                .clone()
-        };
-
-        let result = cell
-            .get_or_try_init(async || {
-                let content = match self.store.get_artifact_bar_zst(artifact_id).await {
-                    Ok(Some(content)) => content,
-                    Ok(None) => {
-                        return Err(None);
-                    }
-                    Err(err) => {
-                        return Err(Some(err));
-                    }
-                };
-                let content = content.into_data_stream().map_err(std::io::Error::other);
-                let content = tokio_util::io::StreamReader::new(content);
-                let file = match create_cache_file(init_id, cache_key, self, content).await {
-                    Ok(file) => file,
-                    Err(err) => {
-                        return Err(Some(err));
-                    }
-                };
-                Ok(Arc::new(file))
-            })
-            .await;
-        let cache_file = match result {
-            Ok(cache_file) => {
-                if cache_file.id == init_id {
-                    // File ID matches the ID we just generated, so this was
-                    // a cache miss that we've now filled in
-                    metrics::counter!("cache_misses", "resource" => resource).increment(1);
-                } else {
-                    // File ID does not match our ID, so the file was already
-                    // populated meaning this was a cache hit
-                    metrics::counter!("cache_hits", "resource" => resource).increment(1);
-                }
-                cache_file.clone()
-            }
-            Err(err) => {
-                match err {
-                    Some(err) => {
-                        metrics::counter!(
-                            "cache_errors",
-                            "resource" => resource,
-                        )
-                        .increment(1);
-                        return Err(err);
-                    }
-                    None => {
-                        metrics::counter!(
-                            "cache_not_found_accesses",
-                            "resource" => resource,
-                        )
-                        .increment(1);
-                        return Ok(None);
-                    }
-                };
-            }
-        };
-        let body = body_from_cache_file(&cache_file).await?;
-        Ok(Some(body))
-    }
-
-    async fn get_project_source(
-        &self,
-        project_id: HashId,
-    ) -> Result<Option<ProjectSource>, StoreError> {
-        let init_id = uuid::Uuid::new_v4();
-        let resource = "project_source";
-
-        let cell = {
-            let mut cached_project_sources = self.cached_project_sources.lock().await;
-            cached_project_sources
-                .get_or_insert(project_id, || Arc::new(OnceCell::new()))
-                .clone()
-        };
-        let result = cell
-            .get_or_try_init(async || {
-                let project_source = self.store.get_project_source(project_id).await;
-                match project_source {
-                    Ok(Some(project_source)) => Ok((project_source, init_id)),
-                    Ok(None) => Err(None),
-                    Err(err) => Err(Some(err)),
-                }
-            })
-            .await;
-        match result {
-            Ok((project_source, id)) => {
-                if *id == init_id {
-                    // File ID matches the ID we just generated, so this was
-                    // a cache miss that we've now filled in
-                    metrics::counter!("cache_misses", "resource" => resource).increment(1);
-                } else {
-                    // File ID does not match our ID, so the file was already
-                    // populated meaning this was a cache hit
-                    metrics::counter!("cache_hits", "resource" => resource).increment(1);
-                }
-                Ok(Some(project_source.clone()))
-            }
-            Err(err) => match err {
-                Some(err) => {
-                    metrics::counter!(
-                        "cache_errors",
-                        "resource" => resource,
-                    )
-                    .increment(1);
-                    Err(err)
-                }
-                None => {
-                    metrics::counter!(
-                        "cache_not_found_accesses",
-                        "resource" => resource,
-                    )
-                    .increment(1);
-                    Ok(None)
-                }
-            },
-        }
-    }
-
-    async fn get_bake_output(&self, recipe_id: HashId) -> Result<Option<BakeOutput>, StoreError> {
-        let init_id = uuid::Uuid::new_v4();
-        let resource = "bake_output";
-
-        let cell = {
-            let mut cached_bake_outputs = self.cached_bake_outputs.lock().await;
-            cached_bake_outputs
-                .get_or_insert(recipe_id, || Arc::new(OnceCell::new()))
-                .clone()
-        };
-        let result = cell
-            .get_or_try_init(async || {
-                let bake_output = self.store.get_bake_output(recipe_id).await;
-                match bake_output {
-                    Ok(Some(bake_output)) => Ok((bake_output, init_id)),
-                    Ok(None) => Err(None),
-                    Err(err) => Err(Some(err)),
-                }
-            })
-            .await;
-        match result {
-            Ok((bake_result, id)) => {
-                if *id == init_id {
-                    // File ID matches the ID we just generated, so this was
-                    // a cache miss that we've now filled in
-                    metrics::counter!("cache_misses", "resource" => resource).increment(1);
-                } else {
-                    // File ID does not match our ID, so the file was already
-                    // populated meaning this was a cache hit
-                    metrics::counter!("cache_hits", "resource" => resource).increment(1);
-                }
-                Ok(Some(bake_result.clone()))
-            }
-            Err(err) => match err {
-                Some(err) => {
-                    metrics::counter!(
-                        "cache_errors",
-                        "resource" => resource,
-                    )
-                    .increment(1);
-                    Err(err)
-                }
-                None => {
-                    metrics::counter!(
-                        "cache_not_found_accesses",
-                        "resource" => resource,
-                    )
-                    .increment(1);
-                    Ok(None)
-                }
-            },
-        }
-    }
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-enum CacheResourceId {
-    Chunk { chunk_id: HashId },
-    Artifact { artifact_id: HashId },
-}
-
-impl CacheResourceId {
-    fn variant_label(&self) -> &'static str {
-        match self {
-            Self::Chunk { .. } => "chunk",
-            Self::Artifact { .. } => "artifact",
-        }
-    }
 }
 
 async fn create_cache_file<S>(
     id: uuid::Uuid,
-    resource_id: CacheResourceId,
+    key: &str,
     store: &CacheStore<S>,
     mut data: impl tokio::io::AsyncBufRead + Unpin,
 ) -> Result<CacheFile, StoreError> {
@@ -389,7 +160,7 @@ async fn create_cache_file<S>(
     let size = tokio::io::copy(&mut data, &mut file).await?;
 
     let reservation = {
-        let mut cached_resources_lock = None;
+        let mut cached_objects_lock = None;
         loop {
             // Try and reserve enough space from the pool for the file
             let reservation = store.capacity_pool.reserve(size);
@@ -400,13 +171,13 @@ async fn create_cache_file<S>(
 
             // We couldn't reserve enough space, so make some space by
             // clearing the cache
-            let cached_resources = match cached_resources_lock.as_mut() {
-                None => cached_resources_lock.insert(store.cached_resources.lock().await),
-                Some(cached_resources) => cached_resources,
+            let cached_objects = match cached_objects_lock.as_mut() {
+                None => cached_objects_lock.insert(store.cached_objects.lock().await),
+                Some(cached_objects) => cached_objects,
             };
 
-            let evicted = cached_resources.pop_lru();
-            let Some((evicted_key, _)) = evicted else {
+            let evicted = cached_objects.pop_lru();
+            let Some((_evicted_key, _)) = evicted else {
                 // Cache is empty but there still wasn't enough space last
                 // we checked. Well, we already wrote the file, so reserve
                 // as much space as we can from the pool and continue onward
@@ -424,24 +195,19 @@ async fn create_cache_file<S>(
                 break reservation;
             };
 
-            metrics::counter!(
-                "cache_evictions",
-                "resource" => evicted_key.variant_label(),
-            )
-            .increment(1);
+            metrics::counter!("cache_evictions").increment(1);
 
             // We just evicted something from the cache, so we're ready to
             // try again
         }
     };
 
-    let resource = resource_id.variant_label();
-    metrics::gauge!("cache_disk_bytes", "resource" => resource).increment(size as f64);
-    metrics::gauge!("cache_disk_files", "resource" => resource).increment(1);
+    metrics::gauge!("cache_disk_bytes").increment(size as f64);
+    metrics::gauge!("cache_disk_files").increment(1);
 
     Ok(CacheFile {
         id,
-        resource_id,
+        _key: key.to_string(),
         file,
         size,
         _reservation: reservation,
@@ -487,7 +253,7 @@ async fn body_from_cache_file(cache_file: &CacheFile) -> tokio::io::Result<axum:
 
 struct CacheFile {
     id: uuid::Uuid,
-    resource_id: CacheResourceId,
+    _key: String,
     file: tokio::fs::File,
     size: u64,
     _reservation: CacheCapacityReservation,
@@ -495,9 +261,8 @@ struct CacheFile {
 
 impl Drop for CacheFile {
     fn drop(&mut self) {
-        let resource = self.resource_id.variant_label();
-        metrics::gauge!("cache_disk_bytes", "resource" => resource).decrement(self.size as f64);
-        metrics::gauge!("cache_disk_files", "resource" => resource).decrement(1);
+        metrics::gauge!("cache_disk_bytes").decrement(self.size as f64);
+        metrics::gauge!("cache_disk_files").decrement(1);
     }
 }
 

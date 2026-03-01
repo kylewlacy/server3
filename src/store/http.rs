@@ -56,7 +56,7 @@ fn axum_body_from_reqwest_response(response: reqwest::Response) -> axum::body::B
     let response_size: Option<u64> = response
         .headers()
         .get(axum::http::header::CONTENT_LENGTH)
-        .and_then(|content_length| Some(content_length.to_str().ok()?.parse().ok()?));
+        .and_then(|content_length| content_length.to_str().ok()?.parse().ok());
     let response_stream = response
         .bytes_stream()
         .map(|bytes| bytes.map_err(StoreError::from));

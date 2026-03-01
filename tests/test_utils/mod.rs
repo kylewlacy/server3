@@ -2,6 +2,7 @@ use server3::{
     config::{CacheConfig, UpstreamConfig},
     store::http::HttpStore,
 };
+use tracing_subscriber::{layer::SubscriberExt as _, util::SubscriberInitExt as _};
 
 pub async fn body_to_bytes(body: axum::body::Body) -> Vec<u8> {
     let bytes = axum::body::to_bytes(body, 10_000_000).await.unwrap();
@@ -18,6 +19,18 @@ pub struct TestContext {
 }
 
 pub fn test_context() -> TestContext {
+    tracing_subscriber::registry()
+        .with(
+            tracing_subscriber::fmt::layer()
+                .compact()
+                .with_target(false)
+                .without_time(),
+        )
+        .with(
+            tracing_subscriber::EnvFilter::try_from_default_env()
+                .unwrap_or_else(|_| tracing_subscriber::EnvFilter::new("server3=info,warn")),
+        )
+        .init();
     TestContext {
         cache_dir: std::sync::OnceLock::new(),
     }

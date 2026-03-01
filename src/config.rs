@@ -49,6 +49,13 @@ pub struct CacheConfig {
     pub dir: PathBuf,
 
     /// Max size of all temporary cache files, in bytes.
+    ///
+    /// Measures logical size rather than physical size (e.g. does not account
+    /// for per-file overhead). The actual space used on disk may use more than
+    /// this size for several reasons, such as:
+    ///
+    /// - Not accounting for physical file size
+    /// - A single cached object exceeding the maximum disk capacity
     #[serde(default = "default_max_disk_capacity")]
     pub max_disk_capacity: bytesize::ByteSize,
 

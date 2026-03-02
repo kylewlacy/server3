@@ -71,7 +71,7 @@ impl CacheStorage {
         );
 
         metrics::gauge!("cache_disk_max_bytes").set(config.max_disk_capacity.as_u64() as f64);
-        metrics::gauge!("cache_disk_max_files").set(max_cache_files as f64);
+        metrics::gauge!("cache_disk_max_file_count").set(max_cache_files as f64);
 
         Ok(Self {
             capacity_pool: CacheCapacityPool::new(config.max_disk_capacity.as_u64()),
@@ -85,6 +85,16 @@ pub struct CacheStore<S> {
     storage: Arc<CacheStorage>,
     host_key: Arc<str>,
     upstream_store: S,
+    cache_miss_count: metrics::Counter,
+    cache_miss_bytes: metrics::Counter,
+    cache_hit_count: metrics::Counter,
+    cache_hit_bytes: metrics::Counter,
+    cache_error_count: metrics::Counter,
+    cache_not_found_count: metrics::Counter,
+    cache_eviction_count: metrics::Counter,
+    cache_eviction_bytes: metrics::Counter,
+    cache_disk_file_count: metrics::Gauge,
+    cache_disk_bytes: metrics::Gauge,
 }
 
 impl<S> CacheStore<S> {
@@ -95,8 +105,18 @@ impl<S> CacheStore<S> {
     ) -> anyhow::Result<Self> {
         Ok(Self {
             storage,
-            host_key,
             upstream_store,
+            cache_miss_count: metrics::counter!("cache_miss_count", "host" => host_key.clone()),
+            cache_miss_bytes: metrics::counter!("cache_miss_bytes", "host" => host_key.clone()),
+            cache_hit_count: metrics::counter!("cache_hit_count", "host" => host_key.clone()),
+            cache_hit_bytes: metrics::counter!("cache_hit_bytes", "host" => host_key.clone()),
+            cache_error_count: metrics::counter!("cache_error_count", "host" => host_key.clone()),
+            cache_not_found_count: metrics::counter!("cache_not_found_count", "host" => host_key.clone()),
+            cache_eviction_count: metrics::counter!("cache_eviction_count", "host" => host_key.clone()),
+            cache_eviction_bytes: metrics::counter!("cache_eviction_bytes", "host" => host_key.clone()),
+            cache_disk_file_count: metrics::gauge!("cache_disk_file_count", "host" => host_key.clone()),
+            cache_disk_bytes: metrics::gauge!("cache_disk_bytes", "host" => host_key.clone()),
+            host_key,
         })
     }
 }
@@ -135,9 +155,7 @@ where
                     .into_data_stream()
                     .map_err(std::io::Error::other);
                 let content = tokio_util::io::StreamReader::new(content);
-                let file =
-                    create_cache_file(init_id, cache_key, &self.storage, object.headers, content)
-                        .await;
+                let file = create_cache_file(init_id, self, object.headers, content).await;
                 let file = match file {
                     Ok(file) => file,
                     Err(err) => {
@@ -153,24 +171,24 @@ where
                 if cache_file.id == init_id {
                     // File ID matches the ID we just generated, so this was
                     // a cache miss that we've now filled in
-                    metrics::counter!("cache_misses", "host" => self.host_key.clone()).increment(1);
+                    self.cache_miss_count.increment(1);
+                    self.cache_miss_bytes.increment(cache_file.size);
                 } else {
                     // File ID does not match our ID, so the file was already
                     // populated meaning this was a cache hit
-                    metrics::counter!("cache_hits", "host" => self.host_key.clone()).increment(1);
+                    self.cache_hit_count.increment(1);
+                    self.cache_hit_bytes.increment(cache_file.size);
                 }
                 cache_file.clone()
             }
             Err(err) => {
                 match err {
                     Some(err) => {
-                        metrics::counter!("cache_errors", "host" => self.host_key.clone())
-                            .increment(1);
+                        self.cache_error_count.increment(1);
                         return Err(err);
                     }
                     None => {
-                        metrics::counter!("cache_not_found_accesses", "host" => self.host_key.clone())
-                            .increment(1);
+                        self.cache_not_found_count.increment(1);
                         return Ok(None);
                     }
                 };
@@ -191,14 +209,13 @@ struct CacheObjectKey {
     key: String,
 }
 
-async fn create_cache_file(
+async fn create_cache_file<S>(
     id: uuid::Uuid,
-    key: CacheObjectKey,
-    storage: &CacheStorage,
+    store: &CacheStore<S>,
     headers: StoreObjectHeaders,
     mut data: impl tokio::io::AsyncBufRead + Unpin,
 ) -> Result<CacheFile, StoreError> {
-    let cache_dir = storage.cache_dir.clone();
+    let cache_dir = store.storage.cache_dir.clone();
     let mut file = tokio::task::spawn_blocking(move || {
         let file = tempfile::tempfile_in(&*cache_dir)?;
         std::io::Result::Ok(tokio::fs::File::from_std(file))
@@ -212,7 +229,7 @@ async fn create_cache_file(
         let mut cached_objects_lock = None;
         loop {
             // Try and reserve enough space from the pool for the file
-            let reservation = storage.capacity_pool.reserve(size);
+            let reservation = store.storage.capacity_pool.reserve(size);
             if let Some(reservation) = reservation {
                 // ...okay, we reserved the space
                 break reservation;
@@ -221,17 +238,17 @@ async fn create_cache_file(
             // We couldn't reserve enough space, so make some space by
             // clearing the cache
             let cached_objects = match cached_objects_lock.as_mut() {
-                None => cached_objects_lock.insert(storage.cached_objects.lock().await),
+                None => cached_objects_lock.insert(store.storage.cached_objects.lock().await),
                 Some(cached_objects) => cached_objects,
             };
 
             let evicted = cached_objects.pop_lru();
-            let Some((evicted_key, _)) = evicted else {
+            let Some((_evicted_key, evicted_file)) = evicted else {
                 // Cache is empty but there still wasn't enough space last
                 // we checked. Well, we already wrote the file, so reserve
                 // as much space as we can from the pool and continue onward
 
-                let reservation = storage.capacity_pool.reserve_up_to(size);
+                let reservation = store.storage.capacity_pool.reserve_up_to(size);
 
                 if reservation.reserved < size {
                     tracing::warn!(
@@ -244,22 +261,33 @@ async fn create_cache_file(
                 break reservation;
             };
 
-            metrics::counter!("cache_evictions", "host" => evicted_key.host.clone()).increment(1);
+            if let Some(evicted_file) = evicted_file.get() {
+                // Update the counters for the file we just evicted rather
+                // than the current store's counters. That way, we update the
+                // metrics with the proper host key
+                evicted_file.cache_eviction_count.increment(1);
+                evicted_file
+                    .cache_eviction_bytes
+                    .increment(evicted_file.size);
+            }
 
             // We just evicted something from the cache, so we're ready to
             // try again
         }
     };
 
-    metrics::gauge!("cache_disk_bytes", "host" => key.host.clone()).increment(size as f64);
-    metrics::gauge!("cache_disk_files", "host" => key.host.clone()).increment(1);
+    store.cache_disk_file_count.increment(1);
+    store.cache_disk_bytes.increment(size as f64);
 
     Ok(CacheFile {
         id,
-        host: key.host.clone(),
         headers,
         file,
         size,
+        cache_eviction_count: store.cache_eviction_count.clone(),
+        cache_eviction_bytes: store.cache_eviction_bytes.clone(),
+        cache_disk_file_count: store.cache_disk_file_count.clone(),
+        cache_disk_bytes: store.cache_disk_bytes.clone(),
         _reservation: reservation,
     })
 }
@@ -303,18 +331,20 @@ async fn body_from_cache_file(cache_file: &CacheFile) -> tokio::io::Result<axum:
 
 struct CacheFile {
     id: uuid::Uuid,
-    host: Arc<str>,
     headers: StoreObjectHeaders,
     file: tokio::fs::File,
     size: u64,
+    cache_eviction_count: metrics::Counter,
+    cache_eviction_bytes: metrics::Counter,
+    cache_disk_file_count: metrics::Gauge,
+    cache_disk_bytes: metrics::Gauge,
     _reservation: CacheCapacityReservation,
 }
 
 impl Drop for CacheFile {
     fn drop(&mut self) {
-        metrics::gauge!("cache_disk_bytes", "host" => self.host.clone())
-            .decrement(self.size as f64);
-        metrics::gauge!("cache_disk_files", "host" => self.host.clone()).decrement(1);
+        self.cache_disk_file_count.decrement(1);
+        self.cache_disk_bytes.decrement(self.size as f64);
     }
 }
 

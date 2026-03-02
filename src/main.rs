@@ -1,4 +1,4 @@
-use std::{collections::HashMap, sync::Arc};
+use std::{collections::HashMap, path::PathBuf, sync::Arc};
 
 use clap::Parser;
 use figment::providers::Format as _;
@@ -7,16 +7,25 @@ use tracing_subscriber::{layer::SubscriberExt as _, util::SubscriberInitExt as _
 use server3::store::http::HttpStore;
 
 #[derive(Debug, Clone, Parser)]
-struct Args {}
+enum Args {
+    Serve {
+        #[arg(short, long)]
+        config: Option<PathBuf>,
+    },
+}
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
-    let _args = Args::parse();
+    let Args::Serve {
+        config: config_path,
+    } = Args::parse();
 
-    let config: server3::config::Config = figment::Figment::new()
-        .merge(figment::providers::Toml::file("config.toml"))
-        .merge(figment::providers::Env::prefixed("SERVER3_").split("__"))
-        .extract()?;
+    let mut config = figment::Figment::new();
+    if let Some(config_path) = config_path {
+        config = config.merge(figment::providers::Toml::file(config_path));
+    };
+    config = config.merge(figment::providers::Env::prefixed("SERVER3_").split("__"));
+    let config: server3::config::Config = config.extract()?;
 
     const DEFAULT_TRACING_DIRECTIVE: &str = concat!(env!("CARGO_CRATE_NAME"), "=info,warn");
     tracing_subscriber::registry()

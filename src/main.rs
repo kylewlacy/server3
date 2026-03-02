@@ -192,11 +192,8 @@ fn build_store(
     host: Option<Arc<str>>,
     upstream: server3::config::UpstreamConfig,
 ) -> anyhow::Result<Arc<dyn server3::store::Store + Send + Sync>> {
-    let upstream_store = match upstream.url.scheme() {
-        "http" | "https" => HttpStore::new(upstream)?,
-        _ => {
-            anyhow::bail!("unsupported scheme for upstream URL: {}", upstream.url);
-        }
+    let upstream_store = match upstream {
+        server3::config::UpstreamConfig::Http(upstream) => HttpStore::new(upstream)?,
     };
     let store = server3::store::cache::CacheStore::new(
         storage,

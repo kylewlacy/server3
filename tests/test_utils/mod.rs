@@ -1,5 +1,5 @@
 use server3::{
-    config::{CacheConfig, UpstreamConfig},
+    config::{CacheConfig, UpstreamHttpConfig},
     store::{StoreObject, http::HttpStore},
 };
 use tracing_subscriber::{layer::SubscriberExt as _, util::SubscriberInitExt as _};
@@ -56,13 +56,13 @@ pub fn mockito_http_store_with_prefix(mockito: &mockito::Server, prefix: &str) -
         let relative_path = format!("{}/", prefix.trim_matches('/'));
         base_url.join(&relative_path).unwrap()
     };
-    let config = UpstreamConfig {
+    HttpStore::new(UpstreamHttpConfig {
         url,
         http_timeout: None,
         http_read_timeout: None,
         http_connect_timeout: None,
-    };
-    HttpStore::new(config).unwrap()
+    })
+    .unwrap()
 }
 
 pub fn cache_config(ctx: &TestContext) -> CacheConfig {

@@ -31,23 +31,29 @@ pub struct HostConfig {
 }
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
-pub struct UpstreamConfig {
+#[serde(rename_all = "snake_case", tag = "type")]
+pub enum UpstreamConfig {
+    /// Resolve objects via HTTP / HTTPS
+    Http(UpstreamHttpConfig),
+}
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct UpstreamHttpConfig {
     /// The upstream cache URL.
     pub url: url::Url,
 
-    /// For HTTP(S) upstreams, the total time before the upstream request
-    /// times out. Defaults to no timeout.
+    /// The total time before the upstream request times out. Defaults to
+    /// no timeout.
     #[serde(default, with = "humantime_serde::option")]
     pub http_timeout: Option<std::time::Duration>,
 
-    /// For HTTP(S) upstreams, the time to wait for a read operation before
-    /// the upstream request times out, resetting each time data is read.
-    /// Defaults to no timeout.
+    /// The time to wait for a read operation before the upstream request
+    /// times out, resetting each time data is read. Defaults to no timeout.
     #[serde(default, with = "humantime_serde::option")]
     pub http_read_timeout: Option<std::time::Duration>,
 
-    /// For HTTP(S) upstreams, the time to wait for a connection before the
-    /// upstream request times out. Defaults to no timeout.
+    /// The time to wait for a connection before the upstream request
+    /// times out. Defaults to no timeout.
     #[serde(default, with = "humantime_serde::option")]
     pub http_connect_timeout: Option<std::time::Duration>,
 }

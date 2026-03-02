@@ -1,7 +1,7 @@
 use futures::StreamExt as _;
 
 use crate::{
-    config::UpstreamConfig,
+    config::UpstreamHttpConfig,
     store::{Store, StoreError, StoreObject, StoreObjectHeaders},
 };
 
@@ -11,7 +11,7 @@ pub struct HttpStore {
 }
 
 impl HttpStore {
-    pub fn new(config: UpstreamConfig) -> anyhow::Result<Self> {
+    pub fn new(config: UpstreamHttpConfig) -> anyhow::Result<Self> {
         let mut reqwest = reqwest::Client::builder()
             .pool_idle_timeout(std::time::Duration::from_secs(60))
             .pool_max_idle_per_host(10);

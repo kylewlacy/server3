@@ -1,4 +1,4 @@
-use std::sync::Arc;
+use std::{collections::HashMap, sync::Arc};
 
 use clap::Parser;
 use figment::providers::Format as _;
@@ -28,20 +28,38 @@ async fn main() -> anyhow::Result<()> {
         .init();
     let prometheus = install_prometheus_recorder()?;
 
-    let store = match config.upstream.url.scheme() {
-        "http" | "https" => HttpStore::new(config.upstream)?,
-        _ => {
-            anyhow::bail!(
-                "unsupported scheme for upstream URL: {}",
-                config.upstream.url
-            );
-        }
-    };
+    let cache_storage = server3::store::cache::CacheStorage::new(config.cache)?;
+    let cache_storage = Arc::new(cache_storage);
 
-    let store = server3::store::cache::CacheStore::new(store, config.cache)?;
-    let state = server3::app::AppState {
-        store: Arc::new(store),
+    let store = if let Some(upstream) = config.upstream {
+        Some(build_store(cache_storage.clone(), None, upstream)?)
+    } else {
+        None
     };
+    let host_stores = config
+        .hosts
+        .into_iter()
+        .filter_map(|(host, host_config)| {
+            let host = Arc::<str>::from(host);
+            let upstream = host_config.upstream?;
+            let store = build_store(cache_storage.clone(), Some(host.clone()), upstream);
+            let store = match store {
+                Ok(store) => store,
+                Err(error) => {
+                    return Some(Err(error));
+                }
+            };
+            Some(Ok((host, store)))
+        })
+        .collect::<anyhow::Result<HashMap<_, _>>>()?;
+    let host_stores = Arc::new(host_stores);
+
+    anyhow::ensure!(
+        store.is_some() || !host_stores.is_empty(),
+        "no upstream stores configured",
+    );
+
+    let state = server3::app::AppState { store, host_stores };
 
     let app = server3::app::router(state)
         .layer(axum::middleware::from_fn(request_metrics_middleware))
@@ -158,4 +176,24 @@ async fn request_metrics_middleware(
     metrics::histogram!("http_requests_duration_seconds", &labels).record(duration.as_secs_f64());
 
     response
+}
+
+fn build_store(
+    storage: Arc<server3::store::cache::CacheStorage>,
+    host: Option<Arc<str>>,
+    upstream: server3::config::UpstreamConfig,
+) -> anyhow::Result<Arc<dyn server3::store::Store + Send + Sync>> {
+    let upstream_store = match upstream.url.scheme() {
+        "http" | "https" => HttpStore::new(upstream)?,
+        _ => {
+            anyhow::bail!("unsupported scheme for upstream URL: {}", upstream.url);
+        }
+    };
+    let store = server3::store::cache::CacheStore::new(
+        storage,
+        host.unwrap_or_else(|| "DEFAULT".into()),
+        upstream_store,
+    )?;
+
+    Ok(Arc::new(store))
 }

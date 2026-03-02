@@ -37,8 +37,19 @@ pub fn test_context() -> TestContext {
 }
 
 pub fn mockito_http_store(mockito: &mockito::Server) -> HttpStore {
+    mockito_http_store_with_prefix(mockito, "")
+}
+
+pub fn mockito_http_store_with_prefix(mockito: &mockito::Server, prefix: &str) -> HttpStore {
+    let base_url: url::Url = mockito.url().parse().unwrap();
+    let url = if prefix.is_empty() {
+        base_url
+    } else {
+        let relative_path = format!("{}/", prefix.trim_matches('/'));
+        base_url.join(&relative_path).unwrap()
+    };
     let config = UpstreamConfig {
-        url: mockito.url().parse().unwrap(),
+        url,
         http_timeout: None,
         http_read_timeout: None,
         http_connect_timeout: None,

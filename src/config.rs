@@ -1,4 +1,4 @@
-use std::path::PathBuf;
+use std::{collections::HashMap, path::PathBuf};
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct Config {
@@ -10,12 +10,24 @@ pub struct Config {
     #[serde(default = "default_bind_metrics_address")]
     pub bind_metrics_address: String,
 
-    /// The upstream cache store this cache server sits in front of.
-    pub upstream: UpstreamConfig,
+    /// Per-host configuration. The config is selected based on the `Host` HTTP
+    /// header. The hostname must match exactly (minus the port number).
+    #[serde(default)]
+    pub hosts: HashMap<String, HostConfig>,
+
+    /// The upstream store to cache. If multiple hosts are configured, this
+    /// is used as the default upstream for any request.
+    pub upstream: Option<UpstreamConfig>,
 
     /// Configuration for the caching behavior.
     #[serde(default)]
     pub cache: CacheConfig,
+}
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct HostConfig {
+    /// The upstream store to cache for this host.
+    pub upstream: Option<UpstreamConfig>,
 }
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]

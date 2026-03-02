@@ -1,9 +1,9 @@
 use std::{collections::HashMap, sync::Arc};
 
-use axum::{Json, body::Body, extract::State};
+use axum::{Json, extract::State};
 use reqwest::StatusCode;
 
-use crate::store::Store;
+use crate::store::{Store, StoreObject};
 
 pub fn router(state: AppState) -> axum::Router {
     axum::Router::new()
@@ -28,7 +28,7 @@ async fn get_object(
     State(state): State<AppState>,
     uri: axum::http::Uri,
     headers: axum::http::HeaderMap,
-) -> Result<Body, AppError> {
+) -> Result<StoreObject, AppError> {
     let host_value = host(&headers)?;
     let hostname = host_value.map(|host_value| {
         if let Some((host, _port)) = host_value.rsplit_once(':') {

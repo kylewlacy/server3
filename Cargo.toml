@@ -35,4 +35,5 @@ url = { version = "2.5.7", features = ["serde"] }
 uuid = { version = "1.19.0", features = ["v4"] }
 
 [dev-dependencies]
+bstr = "1.12.1"
 mockito = "1.7.1"

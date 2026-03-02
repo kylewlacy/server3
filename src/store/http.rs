@@ -2,7 +2,7 @@ use futures::StreamExt as _;
 
 use crate::{
     config::UpstreamConfig,
-    store::{Store, StoreError},
+    store::{Store, StoreError, StoreObject, StoreObjectHeaders},
 };
 
 pub struct HttpStore {
@@ -39,7 +39,7 @@ impl HttpStore {
 
 #[async_trait::async_trait]
 impl Store for HttpStore {
-    async fn get_object(&self, key: &str) -> Result<Option<axum::body::Body>, StoreError> {
+    async fn get_object(&self, key: &str) -> Result<Option<StoreObject>, StoreError> {
         let url = self.url.join(key)?;
 
         let response = self.reqwest.get(url).send().await?;
@@ -48,7 +48,13 @@ impl Store for HttpStore {
         }
 
         let response = response.error_for_status()?;
-        Ok(Some(axum_body_from_reqwest_response(response)))
+        let content_type = response.headers().get("content-type").cloned();
+        let body = axum_body_from_reqwest_response(response);
+        let object = StoreObject {
+            body,
+            headers: StoreObjectHeaders { content_type },
+        };
+        Ok(Some(object))
     }
 }
 

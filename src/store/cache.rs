@@ -11,7 +11,7 @@ use tokio::sync::{Mutex, OnceCell};
 
 use crate::{
     config::CacheConfig,
-    store::{Store, StoreError},
+    store::{Store, StoreError, StoreObject, StoreObjectHeaders},
 };
 
 pub struct CacheStorage {
@@ -106,7 +106,7 @@ impl<S> Store for CacheStore<S>
 where
     S: Store + Send + Sync,
 {
-    async fn get_object(&self, key: &str) -> Result<Option<axum::body::Body>, StoreError> {
+    async fn get_object(&self, key: &str) -> Result<Option<StoreObject>, StoreError> {
         let cache_key = CacheObjectKey {
             host: self.host_key.clone(),
             key: key.to_string(),
@@ -121,7 +121,7 @@ where
         };
         let result = cell
             .get_or_try_init(async || {
-                let content = match self.upstream_store.get_object(key).await {
+                let object = match self.upstream_store.get_object(key).await {
                     Ok(Some(content)) => content,
                     Ok(None) => {
                         return Err(None);
@@ -130,9 +130,14 @@ where
                         return Err(Some(err));
                     }
                 };
-                let content = content.into_data_stream().map_err(std::io::Error::other);
+                let content = object
+                    .body
+                    .into_data_stream()
+                    .map_err(std::io::Error::other);
                 let content = tokio_util::io::StreamReader::new(content);
-                let file = create_cache_file(init_id, cache_key, &self.storage, content).await;
+                let file =
+                    create_cache_file(init_id, cache_key, &self.storage, object.headers, content)
+                        .await;
                 let file = match file {
                     Ok(file) => file,
                     Err(err) => {
@@ -172,7 +177,11 @@ where
             }
         };
         let body = body_from_cache_file(&cache_file).await?;
-        Ok(Some(axum::body::Body::new(body)))
+        let object = StoreObject {
+            body,
+            headers: cache_file.headers.clone(),
+        };
+        Ok(Some(object))
     }
 }
 
@@ -186,6 +195,7 @@ async fn create_cache_file(
     id: uuid::Uuid,
     key: CacheObjectKey,
     storage: &CacheStorage,
+    headers: StoreObjectHeaders,
     mut data: impl tokio::io::AsyncBufRead + Unpin,
 ) -> Result<CacheFile, StoreError> {
     let cache_dir = storage.cache_dir.clone();
@@ -247,6 +257,7 @@ async fn create_cache_file(
     Ok(CacheFile {
         id,
         host: key.host.clone(),
+        headers,
         file,
         size,
         _reservation: reservation,
@@ -293,6 +304,7 @@ async fn body_from_cache_file(cache_file: &CacheFile) -> tokio::io::Result<axum:
 struct CacheFile {
     id: uuid::Uuid,
     host: Arc<str>,
+    headers: StoreObjectHeaders,
     file: tokio::fs::File,
     size: u64,
     _reservation: CacheCapacityReservation,

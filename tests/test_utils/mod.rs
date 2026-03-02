@@ -1,17 +1,25 @@
 use server3::{
     config::{CacheConfig, UpstreamConfig},
-    store::http::HttpStore,
+    store::{StoreObject, http::HttpStore},
 };
 use tracing_subscriber::{layer::SubscriberExt as _, util::SubscriberInitExt as _};
 
-pub async fn body_to_bytes(body: axum::body::Body) -> Vec<u8> {
-    let bytes = axum::body::to_bytes(body, 10_000_000).await.unwrap();
-    bytes.to_vec()
+pub async fn object_to_bytes(object: StoreObject) -> bstr::BString {
+    let bytes = axum::body::to_bytes(object.body, 10_000_000).await.unwrap();
+    bytes.to_vec().into()
 }
 
-pub async fn body_to_string(body: axum::body::Body) -> String {
-    let bytes = body_to_bytes(body).await;
-    String::from_utf8(bytes).unwrap()
+pub async fn object_to_string(object: StoreObject) -> String {
+    let bytes = object_to_bytes(object).await;
+    String::from_utf8(bytes.into()).unwrap()
+}
+
+pub fn object_content_type(object: &StoreObject) -> Option<&bstr::BStr> {
+    object
+        .headers
+        .content_type
+        .as_ref()
+        .map(|content_type| bstr::BStr::new(content_type.as_bytes()))
 }
 
 pub struct TestContext {

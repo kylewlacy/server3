@@ -22,7 +22,7 @@ async fn main() -> anyhow::Result<()> {
 
     let mut config = figment::Figment::new();
     if let Some(config_path) = config_path {
-        config = config.merge(figment::providers::Toml::file(config_path));
+        config = config.merge(Styx::file(config_path));
     };
     config = config.merge(figment::providers::Env::prefixed("SERVER3_").split("__"));
     let config: server3::config::Config = config.extract()?;
@@ -202,4 +202,16 @@ fn build_store(
     )?;
 
     Ok(Arc::new(store))
+}
+
+enum Styx {}
+
+impl figment::providers::Format for Styx {
+    type Error = serde_styx::Error;
+
+    const NAME: &'static str = "Styx";
+
+    fn from_str<T: serde::de::DeserializeOwned>(string: &str) -> Result<T, Self::Error> {
+        serde_styx::from_str(string)
+    }
 }

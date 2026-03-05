@@ -10,7 +10,7 @@ axum = { version = "0.8.8", features = ["macros"] }
 bytes = "1.11.0"
 bytesize = { version = "2.3.1", features = ["serde"] }
 clap = { version = "4.5.54", features = ["derive"] }
-figment = { version = "0.10.19", features = ["env", "toml"] }
+figment = { version = "0.10.19", features = ["env"] }
 futures = "0.3.31"
 hex = "0.4.3"
 http-body = "1.0.1"
@@ -22,6 +22,7 @@ pin-project-lite = "0.2.16"
 reqwest = { version = "0.13.1", features = ["json", "stream"] }
 rlimit = "0.10.2"
 serde = { version = "1.0.228", features = ["derive"] }
+serde_styx = "2.0.0"
 tempfile = "3.24.0"
 thiserror = "2.0.17"
 tokio = { version = "1.49.0", features = ["full"] }

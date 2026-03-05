@@ -17,7 +17,7 @@ use crate::{
 pub struct CacheStorage {
     cache_dir: PathBuf,
     capacity_pool: CacheCapacityPool,
-    cached_objects: Mutex<LruCache<CacheResourceKey, Arc<OnceCell<Arc<CacheFile>>>>>,
+    cached_objects: Mutex<LruCache<CachedResourceKey, Arc<OnceCell<Arc<CachedResource>>>>>,
 }
 
 impl CacheStorage {
@@ -124,7 +124,7 @@ where
     S: Upstream + Send + Sync,
 {
     async fn get(&self, path: &str) -> Result<Option<UpstreamResource>, UpstreamError> {
-        let cache_key = CacheResourceKey {
+        let cache_key = CachedResourceKey {
             host: self.host_key.clone(),
             path: path.to_string(),
         };
@@ -152,7 +152,7 @@ where
                     .into_data_stream()
                     .map_err(std::io::Error::other);
                 let content = tokio_util::io::StreamReader::new(content);
-                let file = create_cache_file(init_id, self, object.headers, content).await;
+                let file = create_cached_resource(init_id, self, object.headers, content).await;
                 let file = match file {
                     Ok(file) => file,
                     Err(err) => {
@@ -191,7 +191,7 @@ where
                 };
             }
         };
-        let body = body_from_cache_file(&cache_file).await?;
+        let body = body_from_cached_resource(&cache_file).await?;
         let object = UpstreamResource {
             body,
             headers: cache_file.headers.clone(),
@@ -201,18 +201,18 @@ where
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
-struct CacheResourceKey {
+struct CachedResourceKey {
     host: Arc<str>,
     path: String,
 }
 
-async fn create_cache_file<S>(
+async fn create_cached_resource<S>(
     id: uuid::Uuid,
-    store: &CacheUpstream<S>,
+    upstream: &CacheUpstream<S>,
     headers: UpstreamResourceHeaders,
-    mut data: impl tokio::io::AsyncBufRead + Unpin,
-) -> Result<CacheFile, UpstreamError> {
-    let cache_dir = store.storage.cache_dir.clone();
+    mut body: impl tokio::io::AsyncBufRead + Unpin,
+) -> Result<CachedResource, UpstreamError> {
+    let cache_dir = upstream.storage.cache_dir.clone();
     let mut file = tokio::task::spawn_blocking(move || {
         let file = tempfile::tempfile_in(&*cache_dir)?;
         std::io::Result::Ok(tokio::fs::File::from_std(file))
@@ -220,13 +220,13 @@ async fn create_cache_file<S>(
     .await
     .unwrap()?;
 
-    let size = tokio::io::copy(&mut data, &mut file).await?;
+    let size = tokio::io::copy(&mut body, &mut file).await?;
 
     let reservation = {
         let mut cached_objects_lock = None;
         loop {
             // Try and reserve enough space from the pool for the file
-            let reservation = store.storage.capacity_pool.reserve(size);
+            let reservation = upstream.storage.capacity_pool.reserve(size);
             if let Some(reservation) = reservation {
                 // ...okay, we reserved the space
                 break reservation;
@@ -235,7 +235,7 @@ async fn create_cache_file<S>(
             // We couldn't reserve enough space, so make some space by
             // clearing the cache
             let cached_objects = match cached_objects_lock.as_mut() {
-                None => cached_objects_lock.insert(store.storage.cached_objects.lock().await),
+                None => cached_objects_lock.insert(upstream.storage.cached_objects.lock().await),
                 Some(cached_objects) => cached_objects,
             };
 
@@ -245,7 +245,7 @@ async fn create_cache_file<S>(
                 // we checked. Well, we already wrote the file, so reserve
                 // as much space as we can from the pool and continue onward
 
-                let reservation = store.storage.capacity_pool.reserve_up_to(size);
+                let reservation = upstream.storage.capacity_pool.reserve_up_to(size);
 
                 if reservation.reserved < size {
                     tracing::warn!(
@@ -273,23 +273,25 @@ async fn create_cache_file<S>(
         }
     };
 
-    store.cache_disk_file_count.increment(1);
-    store.cache_disk_bytes.increment(size as f64);
+    upstream.cache_disk_file_count.increment(1);
+    upstream.cache_disk_bytes.increment(size as f64);
 
-    Ok(CacheFile {
+    Ok(CachedResource {
         id,
         headers,
         file,
         size,
-        cache_eviction_count: store.cache_eviction_count.clone(),
-        cache_eviction_bytes: store.cache_eviction_bytes.clone(),
-        cache_disk_file_count: store.cache_disk_file_count.clone(),
-        cache_disk_bytes: store.cache_disk_bytes.clone(),
+        cache_eviction_count: upstream.cache_eviction_count.clone(),
+        cache_eviction_bytes: upstream.cache_eviction_bytes.clone(),
+        cache_disk_file_count: upstream.cache_disk_file_count.clone(),
+        cache_disk_bytes: upstream.cache_disk_bytes.clone(),
         _reservation: reservation,
     })
 }
 
-async fn body_from_cache_file(cache_file: &CacheFile) -> tokio::io::Result<axum::body::Body> {
+async fn body_from_cached_resource(
+    cache_file: &CachedResource,
+) -> tokio::io::Result<axum::body::Body> {
     let (body_tx, body_rx) = tokio::sync::mpsc::channel(1);
     let file = cache_file.file.try_clone().await?.into_std().await;
 
@@ -326,7 +328,7 @@ async fn body_from_cache_file(cache_file: &CacheFile) -> tokio::io::Result<axum:
     Ok(axum::body::Body::new(body))
 }
 
-struct CacheFile {
+struct CachedResource {
     id: uuid::Uuid,
     headers: UpstreamResourceHeaders,
     file: tokio::fs::File,
@@ -338,7 +340,7 @@ struct CacheFile {
     _reservation: CacheCapacityReservation,
 }
 
-impl Drop for CacheFile {
+impl Drop for CachedResource {
     fn drop(&mut self) {
         self.cache_disk_file_count.decrement(1);
         self.cache_disk_bytes.decrement(self.size as f64);

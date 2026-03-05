@@ -1,4 +1,4 @@
 pub mod app;
 pub mod config;
 pub mod response;
-pub mod store;
+pub mod upstream;

@@ -3,32 +3,32 @@ use std::{collections::HashMap, sync::Arc};
 use axum::{Json, extract::State};
 use reqwest::StatusCode;
 
-use crate::store::{Store, StoreObject};
+use crate::upstream::{Upstream, UpstreamResource};
 
 pub fn router(state: AppState) -> axum::Router {
     axum::Router::new()
-        .fallback(axum::routing::get(get_object))
+        .fallback(axum::routing::get(get_resource))
         .with_state(state)
 }
 
 #[derive(Clone)]
 pub struct AppState {
-    pub store: Option<Arc<dyn Store + Send + Sync>>,
-    pub host_stores: Arc<HashMap<Arc<str>, Arc<dyn Store + Send + Sync>>>,
+    pub upstream: Option<Arc<dyn Upstream + Send + Sync>>,
+    pub host_upstreams: Arc<HashMap<Arc<str>, Arc<dyn Upstream + Send + Sync>>>,
 }
 
 impl AppState {
-    fn store_for_host(&self, host: Option<&str>) -> Option<&Arc<dyn Store + Send + Sync>> {
-        host.and_then(|host| self.host_stores.get(host))
-            .or(self.store.as_ref())
+    fn upstream_for_host(&self, host: Option<&str>) -> Option<&Arc<dyn Upstream + Send + Sync>> {
+        host.and_then(|host| self.host_upstreams.get(host))
+            .or(self.upstream.as_ref())
     }
 }
 
-async fn get_object(
+async fn get_resource(
     State(state): State<AppState>,
     uri: axum::http::Uri,
     headers: axum::http::HeaderMap,
-) -> Result<StoreObject, AppError> {
+) -> Result<UpstreamResource, AppError> {
     let host_value = host(&headers)?;
     let hostname = host_value.map(|host_value| {
         if let Some((host, _port)) = host_value.rsplit_once(':') {
@@ -37,17 +37,17 @@ async fn get_object(
             host_value
         }
     });
-    let store = state
-        .store_for_host(hostname)
-        .ok_or_else(|| AppError::HostNotConfigured {
+    let upstream = state
+        .upstream_for_host(hostname)
+        .ok_or_else(|| AppError::NoUpstreamServer {
             hostname: hostname.map(ToString::to_string),
         })?;
 
-    let key = uri.path().trim_matches('/');
-    let object = store.get_object(key).await?.ok_or_else(|| ObjectNotFound {
-        key: key.to_string(),
+    let path = uri.path().trim_matches('/');
+    let resource = upstream.get(path).await?.ok_or_else(|| ResourceNotFound {
+        path: path.to_string(),
     })?;
-    Ok(object)
+    Ok(resource)
 }
 
 fn host(headers: &axum::http::HeaderMap) -> Result<Option<&str>, AppError> {
@@ -69,14 +69,14 @@ fn host(headers: &axum::http::HeaderMap) -> Result<Option<&str>, AppError> {
 
 #[derive(Debug, thiserror::Error)]
 enum AppError {
-    #[error("error from store")]
-    Store(#[from] crate::store::StoreError),
+    #[error("upstream error: {0}")]
+    Upstream(#[from] crate::upstream::UpstreamError),
 
     #[error(transparent)]
-    NotFound(#[from] ObjectNotFound),
+    NotFound(#[from] ResourceNotFound),
 
-    #[error("no upstream store configured for this host")]
-    HostNotConfigured { hostname: Option<String> },
+    #[error("no upstream server configured for this host")]
+    NoUpstreamServer { hostname: Option<String> },
 
     #[error("invalid 'Host' header value")]
     InvalidHostHeader,
@@ -85,7 +85,7 @@ enum AppError {
 impl axum::response::IntoResponse for AppError {
     fn into_response(self) -> axum::response::Response {
         let (status, message) = match self {
-            Self::Store(error) => {
+            Self::Upstream(error) => {
                 tracing::warn!("store error: {error:?}");
                 (
                     StatusCode::INTERNAL_SERVER_ERROR,
@@ -96,7 +96,7 @@ impl axum::response::IntoResponse for AppError {
                 tracing::info!("{not_found}");
                 (StatusCode::NOT_FOUND, not_found.to_string())
             }
-            Self::HostNotConfigured { ref hostname } => {
+            Self::NoUpstreamServer { ref hostname } => {
                 tracing::info!(hostname, "host not configured");
                 (StatusCode::NOT_FOUND, self.to_string())
             }
@@ -113,7 +113,7 @@ struct JsonError {
 }
 
 #[derive(Debug, thiserror::Error)]
-#[error("object not found in store: {key}")]
-struct ObjectNotFound {
-    key: String,
+#[error("resource not found: {path}")]
+struct ResourceNotFound {
+    path: String,
 }

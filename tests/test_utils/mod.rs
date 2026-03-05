@@ -1,20 +1,20 @@
 use server3::{
     config::{StorageConfig, UpstreamHttpConfig},
-    store::{StoreObject, http::HttpStore},
+    upstream::{UpstreamResource, http::HttpUpstream},
 };
 use tracing_subscriber::{layer::SubscriberExt as _, util::SubscriberInitExt as _};
 
-pub async fn object_to_bytes(object: StoreObject) -> bstr::BString {
+pub async fn object_to_bytes(object: UpstreamResource) -> bstr::BString {
     let bytes = axum::body::to_bytes(object.body, 10_000_000).await.unwrap();
     bytes.to_vec().into()
 }
 
-pub async fn object_to_string(object: StoreObject) -> String {
+pub async fn object_to_string(object: UpstreamResource) -> String {
     let bytes = object_to_bytes(object).await;
     String::from_utf8(bytes.into()).unwrap()
 }
 
-pub fn object_content_type(object: &StoreObject) -> Option<&bstr::BStr> {
+pub fn object_content_type(object: &UpstreamResource) -> Option<&bstr::BStr> {
     object
         .headers
         .content_type
@@ -44,11 +44,11 @@ pub fn test_context() -> TestContext {
     }
 }
 
-pub fn mockito_http_store(mockito: &mockito::Server) -> HttpStore {
+pub fn mockito_http_store(mockito: &mockito::Server) -> HttpUpstream {
     mockito_http_store_with_prefix(mockito, "")
 }
 
-pub fn mockito_http_store_with_prefix(mockito: &mockito::Server, prefix: &str) -> HttpStore {
+pub fn mockito_http_store_with_prefix(mockito: &mockito::Server, prefix: &str) -> HttpUpstream {
     let base_url: url::Url = mockito.url().parse().unwrap();
     let url = if prefix.is_empty() {
         base_url
@@ -56,7 +56,7 @@ pub fn mockito_http_store_with_prefix(mockito: &mockito::Server, prefix: &str) -
         let relative_path = format!("{}/", prefix.trim_matches('/'));
         base_url.join(&relative_path).unwrap()
     };
-    HttpStore::new(UpstreamHttpConfig {
+    HttpUpstream::new(UpstreamHttpConfig {
         url,
         http_timeout: None,
         http_read_timeout: None,

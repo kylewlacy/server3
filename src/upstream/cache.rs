@@ -11,13 +11,13 @@ use tokio::sync::{Mutex, OnceCell};
 
 use crate::{
     config::StorageConfig,
-    store::{Store, StoreError, StoreObject, StoreObjectHeaders},
+    upstream::{Upstream, UpstreamError, UpstreamResource, UpstreamResourceHeaders},
 };
 
 pub struct CacheStorage {
     cache_dir: PathBuf,
     capacity_pool: CacheCapacityPool,
-    cached_objects: Mutex<LruCache<CacheObjectKey, Arc<OnceCell<Arc<CacheFile>>>>>,
+    cached_objects: Mutex<LruCache<CacheResourceKey, Arc<OnceCell<Arc<CacheFile>>>>>,
 }
 
 impl CacheStorage {
@@ -81,10 +81,10 @@ impl CacheStorage {
     }
 }
 
-pub struct CacheStore<S> {
+pub struct CacheUpstream<S> {
     storage: Arc<CacheStorage>,
     host_key: Arc<str>,
-    upstream_store: S,
+    upstream: S,
     cache_miss_count: metrics::Counter,
     cache_miss_bytes: metrics::Counter,
     cache_hit_count: metrics::Counter,
@@ -97,15 +97,15 @@ pub struct CacheStore<S> {
     cache_disk_bytes: metrics::Gauge,
 }
 
-impl<S> CacheStore<S> {
+impl<S> CacheUpstream<S> {
     pub fn new(
         storage: Arc<CacheStorage>,
         host_key: Arc<str>,
-        upstream_store: S,
+        upstream: S,
     ) -> anyhow::Result<Self> {
         Ok(Self {
             storage,
-            upstream_store,
+            upstream,
             cache_miss_count: metrics::counter!("cache_miss_count", "host" => host_key.clone()),
             cache_miss_bytes: metrics::counter!("cache_miss_bytes", "host" => host_key.clone()),
             cache_hit_count: metrics::counter!("cache_hit_count", "host" => host_key.clone()),
@@ -122,14 +122,14 @@ impl<S> CacheStore<S> {
 }
 
 #[async_trait::async_trait]
-impl<S> Store for CacheStore<S>
+impl<S> Upstream for CacheUpstream<S>
 where
-    S: Store + Send + Sync,
+    S: Upstream + Send + Sync,
 {
-    async fn get_object(&self, key: &str) -> Result<Option<StoreObject>, StoreError> {
-        let cache_key = CacheObjectKey {
+    async fn get(&self, path: &str) -> Result<Option<UpstreamResource>, UpstreamError> {
+        let cache_key = CacheResourceKey {
             host: self.host_key.clone(),
-            key: key.to_string(),
+            path: path.to_string(),
         };
         let init_id = uuid::Uuid::new_v4();
 
@@ -141,7 +141,7 @@ where
         };
         let result = cell
             .get_or_try_init(async || {
-                let object = match self.upstream_store.get_object(key).await {
+                let object = match self.upstream.get(path).await {
                     Ok(Some(content)) => content,
                     Ok(None) => {
                         return Err(None);
@@ -195,7 +195,7 @@ where
             }
         };
         let body = body_from_cache_file(&cache_file).await?;
-        let object = StoreObject {
+        let object = UpstreamResource {
             body,
             headers: cache_file.headers.clone(),
         };
@@ -204,17 +204,17 @@ where
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
-struct CacheObjectKey {
+struct CacheResourceKey {
     host: Arc<str>,
-    key: String,
+    path: String,
 }
 
 async fn create_cache_file<S>(
     id: uuid::Uuid,
-    store: &CacheStore<S>,
-    headers: StoreObjectHeaders,
+    store: &CacheUpstream<S>,
+    headers: UpstreamResourceHeaders,
     mut data: impl tokio::io::AsyncBufRead + Unpin,
-) -> Result<CacheFile, StoreError> {
+) -> Result<CacheFile, UpstreamError> {
     let cache_dir = store.storage.cache_dir.clone();
     let mut file = tokio::task::spawn_blocking(move || {
         let file = tempfile::tempfile_in(&*cache_dir)?;
@@ -331,7 +331,7 @@ async fn body_from_cache_file(cache_file: &CacheFile) -> tokio::io::Result<axum:
 
 struct CacheFile {
     id: uuid::Uuid,
-    headers: StoreObjectHeaders,
+    headers: UpstreamResourceHeaders,
     file: tokio::fs::File,
     size: u64,
     cache_eviction_count: metrics::Counter,

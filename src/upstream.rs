@@ -2,21 +2,21 @@ pub mod cache;
 pub mod http;
 
 #[async_trait::async_trait]
-pub trait Store {
-    async fn get_object(&self, key: &str) -> Result<Option<StoreObject>, StoreError>;
+pub trait Upstream {
+    async fn get(&self, path: &str) -> Result<Option<UpstreamResource>, UpstreamError>;
 }
 
-pub struct StoreObject {
-    pub headers: StoreObjectHeaders,
+pub struct UpstreamResource {
+    pub headers: UpstreamResourceHeaders,
     pub body: axum::body::Body,
 }
 
 #[derive(Debug, Clone)]
-pub struct StoreObjectHeaders {
+pub struct UpstreamResourceHeaders {
     pub content_type: Option<axum::http::HeaderValue>,
 }
 
-impl axum::response::IntoResponse for StoreObject {
+impl axum::response::IntoResponse for UpstreamResource {
     fn into_response(self) -> axum::response::Response {
         let mut response = axum::response::Response::new(self.body);
         if let Some(content_type) = self.headers.content_type {
@@ -28,7 +28,7 @@ impl axum::response::IntoResponse for StoreObject {
 }
 
 #[derive(Debug, thiserror::Error)]
-pub enum StoreError {
+pub enum UpstreamError {
     #[error(transparent)]
     Url(#[from] url::ParseError),
 

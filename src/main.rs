@@ -4,7 +4,7 @@ use clap::Parser;
 use figment::providers::Format as _;
 use tracing_subscriber::{layer::SubscriberExt as _, util::SubscriberInitExt as _};
 
-use server3::store::http::HttpStore;
+use server3::upstream::http::HttpUpstream;
 
 #[derive(Debug, Clone, Parser)]
 enum Args {
@@ -37,38 +37,41 @@ async fn main() -> anyhow::Result<()> {
         .init();
     let prometheus = install_prometheus_recorder()?;
 
-    let cache_storage = server3::store::cache::CacheStorage::new(config.storage)?;
+    let cache_storage = server3::upstream::cache::CacheStorage::new(config.storage)?;
     let cache_storage = Arc::new(cache_storage);
 
-    let store = if let Some(upstream) = config.upstream {
-        Some(build_store(cache_storage.clone(), None, upstream)?)
+    let upstream = if let Some(upstream) = config.upstream {
+        Some(build_upstream(cache_storage.clone(), None, upstream)?)
     } else {
         None
     };
-    let host_stores = config
+    let host_upstreams = config
         .hosts
         .into_iter()
         .filter_map(|(host, host_config)| {
             let host = Arc::<str>::from(host);
             let upstream = host_config.upstream?;
-            let store = build_store(cache_storage.clone(), Some(host.clone()), upstream);
-            let store = match store {
-                Ok(store) => store,
+            let upstream = build_upstream(cache_storage.clone(), Some(host.clone()), upstream);
+            let upstream = match upstream {
+                Ok(upstream) => upstream,
                 Err(error) => {
                     return Some(Err(error));
                 }
             };
-            Some(Ok((host, store)))
+            Some(Ok((host, upstream)))
         })
         .collect::<anyhow::Result<HashMap<_, _>>>()?;
-    let host_stores = Arc::new(host_stores);
+    let host_upstreams = Arc::new(host_upstreams);
 
     anyhow::ensure!(
-        store.is_some() || !host_stores.is_empty(),
-        "no upstream stores configured",
+        upstream.is_some() || !host_upstreams.is_empty(),
+        "no upstreams configured",
     );
 
-    let state = server3::app::AppState { store, host_stores };
+    let state = server3::app::AppState {
+        upstream,
+        host_upstreams,
+    };
 
     let app = server3::app::router(state)
         .layer(axum::middleware::from_fn(request_metrics_middleware))
@@ -187,21 +190,21 @@ async fn request_metrics_middleware(
     response
 }
 
-fn build_store(
-    storage: Arc<server3::store::cache::CacheStorage>,
+fn build_upstream(
+    storage: Arc<server3::upstream::cache::CacheStorage>,
     host: Option<Arc<str>>,
     upstream: server3::config::UpstreamConfig,
-) -> anyhow::Result<Arc<dyn server3::store::Store + Send + Sync>> {
-    let upstream_store = match upstream {
-        server3::config::UpstreamConfig::Http(upstream) => HttpStore::new(upstream)?,
+) -> anyhow::Result<Arc<dyn server3::upstream::Upstream + Send + Sync>> {
+    let upstream = match upstream {
+        server3::config::UpstreamConfig::Http(upstream) => HttpUpstream::new(upstream)?,
     };
-    let store = server3::store::cache::CacheStore::new(
+    let upstream = server3::upstream::cache::CacheUpstream::new(
         storage,
         host.unwrap_or_else(|| "DEFAULT".into()),
-        upstream_store,
+        upstream,
     )?;
 
-    Ok(Arc::new(store))
+    Ok(Arc::new(upstream))
 }
 
 enum Styx {}

@@ -1,6 +1,5 @@
 use std::sync::Arc;
 
-pub mod cache;
 pub mod http;
 
 #[async_trait::async_trait]

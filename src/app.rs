@@ -3,7 +3,10 @@ use std::{collections::HashMap, sync::Arc};
 use axum::{Json, extract::State};
 use reqwest::StatusCode;
 
-use crate::upstream::{ArcUpstream, Upstream, UpstreamResource, cache::CacheUpstream};
+use crate::{
+    cache::Cache,
+    upstream::{ArcUpstream, Upstream, UpstreamResource},
+};
 
 pub fn router(state: AppState) -> axum::Router {
     axum::Router::new()
@@ -13,15 +16,15 @@ pub fn router(state: AppState) -> axum::Router {
 
 #[derive(Clone)]
 pub struct AppState {
-    pub upstream: Option<CacheUpstream<ArcUpstream>>,
-    pub host_upstreams: Arc<HashMap<Arc<str>, CacheUpstream<ArcUpstream>>>,
+    pub upstream: Option<Cache<ArcUpstream>>,
+    pub host_upstreams: Arc<HashMap<Arc<str>, Cache<ArcUpstream>>>,
 }
 
 impl AppState {
-    fn upstream_for_host(
+    fn cache_for_host(
         &self,
         host: Option<&str>,
-    ) -> Option<&CacheUpstream<Arc<dyn Upstream + Send + Sync>>> {
+    ) -> Option<&Cache<Arc<dyn Upstream + Send + Sync>>> {
         host.and_then(|host| self.host_upstreams.get(host))
             .or(self.upstream.as_ref())
     }
@@ -40,14 +43,14 @@ async fn get_resource(
             host_value
         }
     });
-    let upstream = state
-        .upstream_for_host(hostname)
+    let cache = state
+        .cache_for_host(hostname)
         .ok_or_else(|| AppError::NoUpstreamServer {
             hostname: hostname.map(ToString::to_string),
         })?;
 
     let path = uri.path().trim_matches('/');
-    let resource = upstream.get(path).await?.ok_or_else(|| ResourceNotFound {
+    let resource = cache.get(path).await?.ok_or_else(|| ResourceNotFound {
         path: path.to_string(),
     })?;
     Ok(resource)

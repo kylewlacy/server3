@@ -82,7 +82,7 @@ impl CacheStorage {
 }
 
 #[derive(Clone)]
-pub struct CacheUpstream<S> {
+pub struct Cache<S> {
     storage: Arc<CacheStorage>,
     host_key: Arc<str>,
     upstream: S,
@@ -98,7 +98,7 @@ pub struct CacheUpstream<S> {
     cache_disk_bytes: metrics::Gauge,
 }
 
-impl<S> CacheUpstream<S> {
+impl<S> Cache<S> {
     pub fn new(storage: Arc<CacheStorage>, host_key: Arc<str>, upstream: S) -> Self {
         Self {
             storage,
@@ -118,12 +118,11 @@ impl<S> CacheUpstream<S> {
     }
 }
 
-#[async_trait::async_trait]
-impl<S> Upstream for CacheUpstream<S>
+impl<S> Cache<S>
 where
     S: Upstream + Send + Sync,
 {
-    async fn get(&self, path: &str) -> Result<Option<UpstreamResource>, UpstreamError> {
+    pub async fn get(&self, path: &str) -> Result<Option<UpstreamResource>, UpstreamError> {
         let cache_key = CachedResourceKey {
             host: self.host_key.clone(),
             path: path.to_string(),
@@ -208,11 +207,11 @@ struct CachedResourceKey {
 
 async fn create_cached_resource<S>(
     id: uuid::Uuid,
-    upstream: &CacheUpstream<S>,
+    cache: &Cache<S>,
     headers: UpstreamResourceHeaders,
     mut body: impl tokio::io::AsyncBufRead + Unpin,
 ) -> Result<CachedResource, UpstreamError> {
-    let cache_dir = upstream.storage.cache_dir.clone();
+    let cache_dir = cache.storage.cache_dir.clone();
     let mut file = tokio::task::spawn_blocking(move || {
         let file = tempfile::tempfile_in(&*cache_dir)?;
         std::io::Result::Ok(tokio::fs::File::from_std(file))
@@ -226,7 +225,7 @@ async fn create_cached_resource<S>(
         let mut cached_objects_lock = None;
         loop {
             // Try and reserve enough space from the pool for the file
-            let reservation = upstream.storage.capacity_pool.reserve(size);
+            let reservation = cache.storage.capacity_pool.reserve(size);
             if let Some(reservation) = reservation {
                 // ...okay, we reserved the space
                 break reservation;
@@ -235,7 +234,7 @@ async fn create_cached_resource<S>(
             // We couldn't reserve enough space, so make some space by
             // clearing the cache
             let cached_objects = match cached_objects_lock.as_mut() {
-                None => cached_objects_lock.insert(upstream.storage.cached_objects.lock().await),
+                None => cached_objects_lock.insert(cache.storage.cached_objects.lock().await),
                 Some(cached_objects) => cached_objects,
             };
 
@@ -245,7 +244,7 @@ async fn create_cached_resource<S>(
                 // we checked. Well, we already wrote the file, so reserve
                 // as much space as we can from the pool and continue onward
 
-                let reservation = upstream.storage.capacity_pool.reserve_up_to(size);
+                let reservation = cache.storage.capacity_pool.reserve_up_to(size);
 
                 if reservation.reserved < size {
                     tracing::warn!(
@@ -273,18 +272,18 @@ async fn create_cached_resource<S>(
         }
     };
 
-    upstream.cache_disk_file_count.increment(1);
-    upstream.cache_disk_bytes.increment(size as f64);
+    cache.cache_disk_file_count.increment(1);
+    cache.cache_disk_bytes.increment(size as f64);
 
     Ok(CachedResource {
         id,
         headers,
         file,
         size,
-        cache_eviction_count: upstream.cache_eviction_count.clone(),
-        cache_eviction_bytes: upstream.cache_eviction_bytes.clone(),
-        cache_disk_file_count: upstream.cache_disk_file_count.clone(),
-        cache_disk_bytes: upstream.cache_disk_bytes.clone(),
+        cache_eviction_count: cache.cache_eviction_count.clone(),
+        cache_eviction_bytes: cache.cache_eviction_bytes.clone(),
+        cache_disk_file_count: cache.cache_disk_file_count.clone(),
+        cache_disk_bytes: cache.cache_disk_bytes.clone(),
         _reservation: reservation,
     })
 }

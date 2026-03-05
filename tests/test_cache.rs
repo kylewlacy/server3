@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use bstr::BStr;
-use server3::{config::StorageConfig, upstream::Upstream as _};
+use server3::config::StorageConfig;
 
 use crate::test_utils::{
     cache_config, mockito_http_store, mockito_http_store_with_prefix, object_content_type,
@@ -16,12 +16,8 @@ async fn test_cache_object() {
     let mut mock_server = mockito::Server::new_async().await;
 
     let upstream_store = mockito_http_store(&mock_server);
-    let storage = server3::upstream::cache::CacheStorage::new(cache_config(&ctx)).unwrap();
-    let cache = server3::upstream::cache::CacheUpstream::new(
-        Arc::new(storage),
-        "host".into(),
-        upstream_store,
-    );
+    let storage = server3::cache::CacheStorage::new(cache_config(&ctx)).unwrap();
+    let cache = server3::cache::Cache::new(Arc::new(storage), "host".into(), upstream_store);
 
     // Put an object in the upstream server
     let key = "/foo/bar.txt";
@@ -49,12 +45,8 @@ async fn test_cache_object_content_type() {
     let mut mock_server = mockito::Server::new_async().await;
 
     let upstream_store = mockito_http_store(&mock_server);
-    let storage = server3::upstream::cache::CacheStorage::new(cache_config(&ctx)).unwrap();
-    let cache = server3::upstream::cache::CacheUpstream::new(
-        Arc::new(storage),
-        "host".into(),
-        upstream_store,
-    );
+    let storage = server3::cache::CacheStorage::new(cache_config(&ctx)).unwrap();
+    let cache = server3::cache::Cache::new(Arc::new(storage), "host".into(), upstream_store);
 
     // Put some objects in the upstream store with various
     // Content-Type values
@@ -172,16 +164,12 @@ async fn test_cache_max_objects() {
     let mut mock_server = mockito::Server::new_async().await;
 
     let upstream_store = mockito_http_store(&mock_server);
-    let storage = server3::upstream::cache::CacheStorage::new(StorageConfig {
+    let storage = server3::cache::CacheStorage::new(StorageConfig {
         max_cache_files: Some(3),
         ..cache_config(&ctx)
     })
     .unwrap();
-    let cache = server3::upstream::cache::CacheUpstream::new(
-        Arc::new(storage),
-        "host".into(),
-        upstream_store,
-    );
+    let cache = server3::cache::Cache::new(Arc::new(storage), "host".into(), upstream_store);
 
     // Add 3 objects to the upstream cache
     let object_1_mock = mock_server
@@ -270,16 +258,12 @@ async fn test_cache_max_disk_capacity() {
     let mut mock_server = mockito::Server::new_async().await;
 
     let upstream_store = mockito_http_store(&mock_server);
-    let storage = server3::upstream::cache::CacheStorage::new(StorageConfig {
+    let storage = server3::cache::CacheStorage::new(StorageConfig {
         max_disk_capacity: bytesize::ByteSize::b(499),
         ..cache_config(&ctx)
     })
     .unwrap();
-    let cache = server3::upstream::cache::CacheUpstream::new(
-        Arc::new(storage),
-        "host".into(),
-        upstream_store,
-    );
+    let cache = server3::cache::Cache::new(Arc::new(storage), "host".into(), upstream_store);
 
     let bytes_1x100 = vec![1u8; 100];
     let bytes_2x100 = vec![2u8; 100];
@@ -402,7 +386,7 @@ async fn test_cache_partition_by_host_key() {
     let ctx = test_context();
     let mut mock_server = mockito::Server::new_async().await;
 
-    let storage = server3::upstream::cache::CacheStorage::new(cache_config(&ctx)).unwrap();
+    let storage = server3::cache::CacheStorage::new(cache_config(&ctx)).unwrap();
     let storage = Arc::new(storage);
 
     let upstream_store_a = mockito_http_store_with_prefix(&mock_server, "a");
@@ -410,23 +394,11 @@ async fn test_cache_partition_by_host_key() {
     let upstream_store_b2 = mockito_http_store_with_prefix(&mock_server, "b2");
 
     // `cache_a` has a unique host key
-    let cache_a = server3::upstream::cache::CacheUpstream::new(
-        storage.clone(),
-        "host-a".into(),
-        upstream_store_a,
-    );
+    let cache_a = server3::cache::Cache::new(storage.clone(), "host-a".into(), upstream_store_a);
 
     // `cache_b1` and `cache_b2` share the same host key, and so overlap in the cache
-    let cache_b1 = server3::upstream::cache::CacheUpstream::new(
-        storage.clone(),
-        "host-b".into(),
-        upstream_store_b1,
-    );
-    let cache_b2 = server3::upstream::cache::CacheUpstream::new(
-        storage.clone(),
-        "host-b".into(),
-        upstream_store_b2,
-    );
+    let cache_b1 = server3::cache::Cache::new(storage.clone(), "host-b".into(), upstream_store_b1);
+    let cache_b2 = server3::cache::Cache::new(storage.clone(), "host-b".into(), upstream_store_b2);
 
     // Put the same object in the upstream for both a and b1
     let a_foo_mock = mock_server

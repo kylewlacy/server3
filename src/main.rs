@@ -4,7 +4,7 @@ use clap::Parser;
 use figment::providers::Format as _;
 use tracing_subscriber::{layer::SubscriberExt as _, util::SubscriberInitExt as _};
 
-use server3::upstream::{ArcUpstream, cache::CacheUpstream, http::HttpUpstream};
+use server3::upstream::{ArcUpstream, http::HttpUpstream};
 
 #[derive(Debug, Clone, Parser)]
 enum Args {
@@ -37,12 +37,13 @@ async fn main() -> anyhow::Result<()> {
         .init();
     let prometheus = install_prometheus_recorder()?;
 
-    let cache_storage = server3::upstream::cache::CacheStorage::new(config.storage)?;
+    let cache_storage = server3::cache::CacheStorage::new(config.storage)?;
     let cache_storage = Arc::new(cache_storage);
 
     let upstream = if let Some(upstream) = config.upstream {
         let upstream = build_upstream(upstream)?;
-        let upstream = CacheUpstream::new(cache_storage.clone(), "DEFAULT".into(), upstream);
+        let upstream =
+            server3::cache::Cache::new(cache_storage.clone(), "DEFAULT".into(), upstream);
         Some(upstream)
     } else {
         None
@@ -60,7 +61,8 @@ async fn main() -> anyhow::Result<()> {
                     return Some(Err(error));
                 }
             };
-            let upstream = CacheUpstream::new(cache_storage.clone(), host.clone(), upstream);
+            let upstream =
+                server3::cache::Cache::new(cache_storage.clone(), host.clone(), upstream);
             Some(Ok((host, upstream)))
         })
         .collect::<anyhow::Result<HashMap<_, _>>>()?;

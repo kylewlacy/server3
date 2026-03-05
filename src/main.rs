@@ -37,7 +37,7 @@ async fn main() -> anyhow::Result<()> {
         .init();
     let prometheus = install_prometheus_recorder()?;
 
-    let cache_storage = server3::store::cache::CacheStorage::new(config.cache)?;
+    let cache_storage = server3::store::cache::CacheStorage::new(config.storage)?;
     let cache_storage = Arc::new(cache_storage);
 
     let store = if let Some(upstream) = config.upstream {

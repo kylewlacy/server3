@@ -10,7 +10,7 @@ use lru::LruCache;
 use tokio::sync::{Mutex, OnceCell};
 
 use crate::{
-    config::CacheConfig,
+    config::StorageConfig,
     store::{Store, StoreError, StoreObject, StoreObjectHeaders},
 };
 
@@ -21,7 +21,7 @@ pub struct CacheStorage {
 }
 
 impl CacheStorage {
-    pub fn new(config: CacheConfig) -> anyhow::Result<Self> {
+    pub fn new(config: StorageConfig) -> anyhow::Result<Self> {
         let (original_soft_limit, hard_limit) =
             rlimit::getrlimit(rlimit::Resource::NOFILE).context("failed to get rlimit")?;
 

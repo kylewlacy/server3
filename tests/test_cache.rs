@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use bstr::BStr;
-use server3::{config::CacheConfig, store::Store as _};
+use server3::{config::StorageConfig, store::Store as _};
 
 use crate::test_utils::{
     cache_config, mockito_http_store, mockito_http_store_with_prefix, object_content_type,
@@ -168,7 +168,7 @@ async fn test_cache_max_objects() {
     let mut mock_server = mockito::Server::new_async().await;
 
     let upstream_store = mockito_http_store(&mock_server);
-    let storage = server3::store::cache::CacheStorage::new(CacheConfig {
+    let storage = server3::store::cache::CacheStorage::new(StorageConfig {
         max_cache_files: Some(3),
         ..cache_config(&ctx)
     })
@@ -264,7 +264,7 @@ async fn test_cache_max_disk_capacity() {
     let mut mock_server = mockito::Server::new_async().await;
 
     let upstream_store = mockito_http_store(&mock_server);
-    let storage = server3::store::cache::CacheStorage::new(CacheConfig {
+    let storage = server3::store::cache::CacheStorage::new(StorageConfig {
         max_disk_capacity: bytesize::ByteSize::b(499),
         ..cache_config(&ctx)
     })

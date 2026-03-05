@@ -1,5 +1,5 @@
 use server3::{
-    config::{CacheConfig, UpstreamHttpConfig},
+    config::{StorageConfig, UpstreamHttpConfig},
     store::{StoreObject, http::HttpStore},
 };
 use tracing_subscriber::{layer::SubscriberExt as _, util::SubscriberInitExt as _};
@@ -65,12 +65,12 @@ pub fn mockito_http_store_with_prefix(mockito: &mockito::Server, prefix: &str) -
     .unwrap()
 }
 
-pub fn cache_config(ctx: &TestContext) -> CacheConfig {
+pub fn cache_config(ctx: &TestContext) -> StorageConfig {
     let cache_dir = ctx
         .cache_dir
         .get_or_init(|| tempfile::TempDir::new().expect("failed to create temp dir"));
 
-    CacheConfig {
+    StorageConfig {
         dir: cache_dir.path().to_path_buf(),
         ..Default::default()
     }

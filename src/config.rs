@@ -2,44 +2,70 @@ use std::{collections::HashMap, path::PathBuf};
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct Config {
-    /// The address the cache server listens on.
+    /// The address the reverse proxy server listens on.
     #[serde(default = "default_bind_address")]
     pub bind_address: String,
 
-    /// The address the metrics for the cache server listens on.
+    /// The address the metrics for the reverse proxy server listens on.
     #[serde(default = "default_bind_metrics_address")]
     pub bind_metrics_address: String,
 
-    /// Per-host configuration. The config is selected based on the `Host` HTTP
-    /// header. The hostname must match exactly (minus the port number).
+    /// Per-host configuration. This can be to server different configuration
+    /// or select different upstream servers based on the HTTP `Host` header.
+    ///
+    /// When configured, an incoming request will only match if the `Host`
+    /// header is an exact match (ignoring the port number). Any requests
+    /// that don't match will either proxy to the top-level [`upstream`]
+    /// configuration, or otherwise will return a "not found"
+    /// response.
     #[serde(default)]
     pub hosts: HashMap<String, HostConfig>,
 
-    /// The upstream store to cache. If multiple hosts are configured, this
-    /// is used as the default upstream for any request.
+    /// The source server to proxy requests to.
+    ///
+    /// Each host defined in [`hosts`] can define its own upstream server too,
+    /// which takes precedence over this setting.
     pub upstream: Option<UpstreamConfig>,
 
-    /// Configuration for the caching behavior.
+    /// Configuration for where cached data should be stored.
     #[serde(default)]
-    pub cache: CacheConfig,
+    pub storage: StorageConfig,
 }
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct HostConfig {
-    /// The upstream store to cache for this host.
+    /// The upstream server for this host.
     pub upstream: Option<UpstreamConfig>,
 }
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "snake_case", tag = "type")]
 pub enum UpstreamConfig {
-    /// Resolve objects via HTTP / HTTPS
+    /// Send proxied requests to an HTTP / HTTPS server.
+    ///
+    /// The defaults are not meant for acting as a generic HTTP
+    /// reverse proxy! This is more tuned for RESTful servers and
+    /// object stores like S3. A few notable defaults:
+    ///
+    /// - Only `GET` requests are proxied.
+    /// - Request paths are normalized by stripping extra leading or
+    ///   trailing `/`s.
+    /// - Query strings and request headers are not forwarded.
+    /// - Upstream `Cache-Control` headers are ignored. The configuration
+    ///   alone decides if and how long cache entries are persisted.
+    /// - Upstream 4xx or 5xx errors are treated as errors, and are
+    ///   not returned or cached.
+    /// - 3xx responses are followed while caching! The upstream response
+    ///   is treated as if the server responded with the final resolved
+    ///   response, and will be cached as its own resource.
+    /// - Only some response headers (e.g. `Content-Type`) are cached and
+    ///   returned.
     Http(UpstreamHttpConfig),
 }
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct UpstreamHttpConfig {
-    /// The upstream cache URL.
+    /// The upstream server URL.
     pub url: url::Url,
 
     /// The total time before the upstream request times out. Defaults to
@@ -59,10 +85,12 @@ pub struct UpstreamHttpConfig {
 }
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
-pub struct CacheConfig {
-    /// Directory used to store temporary cache files (files are unlinked after
-    /// creation, so this is not used for persistence). Defaults to the system's
-    /// temporary directory, e.g. `/tmp`.
+pub struct StorageConfig {
+    /// Directory used to store temporary cache files. Defaults to the
+    /// system's temporary directory, e.g. `/tmp`.
+    ///
+    /// Only temporary files are stored in this directory, and cached data
+    /// is not reused across server restarts.
     #[serde(default = "default_cache_dir")]
     pub dir: PathBuf,
 
@@ -100,7 +128,7 @@ pub struct CacheConfig {
     pub min_non_cache_files: u64,
 }
 
-impl Default for CacheConfig {
+impl Default for StorageConfig {
     fn default() -> Self {
         Self {
             dir: default_cache_dir(),

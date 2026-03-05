@@ -1,4 +1,7 @@
+use std::sync::Arc;
+
 use server3::{
+    cache::{CacheEnabledRouteRule, CacheMaxAgeRule, CacheRouteRule, CacheRouteRules},
     config::{StorageConfig, UpstreamHttpConfig},
     upstream::{UpstreamResource, http::HttpUpstream},
 };
@@ -74,4 +77,12 @@ pub fn cache_config(ctx: &TestContext) -> StorageConfig {
         dir: cache_dir.path().to_path_buf(),
         ..Default::default()
     }
+}
+
+pub fn cache_routes_forever() -> Arc<CacheRouteRules> {
+    Arc::new(CacheRouteRules::new(CacheRouteRule::Enabled(
+        CacheEnabledRouteRule {
+            max_age: CacheMaxAgeRule::CacheForever,
+        },
+    )))
 }

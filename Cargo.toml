@@ -15,9 +15,11 @@ futures = "0.3.31"
 hex = "0.4.3"
 http-body = "1.0.1"
 humantime-serde = "1.1.1"
+jiff = { version = "0.2.23", features = ["serde"] }
 lru = "0.16.3"
 metrics = "0.24.3"
 metrics-exporter-prometheus = "0.18.1"
+path-tree = "0.8.3"
 pin-project-lite = "0.2.16"
 reqwest = { version = "0.13.1", features = ["json", "stream"] }
 rlimit = "0.10.2"

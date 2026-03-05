@@ -27,6 +27,25 @@ pub struct Config {
     /// which takes precedence over this setting.
     pub upstream: Option<UpstreamConfig>,
 
+    /// Customize how different request paths are routed. Allows for
+    /// customizing caching behavior by route and which routes should be
+    /// forwarded upstream.
+    ///
+    /// Routes are matched against URL paths using the crate
+    /// [`path-tree`](https://docs.rs/path-tree/0.8.3/path_tree/).
+    ///
+    /// Each host defined in [`hosts`] can define its own route configuration
+    /// too, which takes precedence over this setting.
+    #[serde(default)]
+    pub routes: HashMap<String, RouteConfig>,
+
+    /// Cache behavior and how long to cache things for.
+    ///
+    /// The settings at the [`hosts`] level or the [`routes`] level take
+    /// precedence over this setting.
+    #[serde(default)]
+    pub cache: CacheConfig,
+
     /// Configuration for where cached data should be stored.
     #[serde(default)]
     pub storage: StorageConfig,
@@ -36,6 +55,20 @@ pub struct Config {
 pub struct HostConfig {
     /// The upstream server for this host.
     pub upstream: Option<UpstreamConfig>,
+
+    /// Customize how different request paths are routed. Allows for
+    /// customizing caching behavior by route and which routes should be
+    /// forwarded upstream.
+    ///
+    /// Routes are matched against URL paths using the crate
+    /// [`path-tree`](https://docs.rs/path-tree/0.8.3/path_tree/).
+    pub routes: Option<HashMap<String, RouteConfig>>,
+
+    /// Cache behavior and how long to cache things for.
+    ///
+    /// The setting within the host-level [`routes`] take precedence over
+    /// this setting, if set.
+    pub cache: Option<CacheConfig>,
 }
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
@@ -82,6 +115,79 @@ pub struct UpstreamHttpConfig {
     /// times out. Defaults to no timeout.
     #[serde(default, with = "humantime_serde::option")]
     pub http_connect_timeout: Option<std::time::Duration>,
+}
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[serde(untagged)]
+pub enum RouteConfig {
+    Disabled(DisabledRoute),
+
+    Enabled {
+        /// Cache behavior and how long to cache things for.
+        #[serde(flatten)]
+        cache: CacheConfig,
+    },
+}
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum DisabledRoute {
+    /// Disable this route, and don't send it to the upstream server. Also
+    /// helps distinguish metrics ("not found" versus "unrouted" metrics).
+    Disabled,
+}
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum EnabledRouteConfig {
+    Disabled,
+}
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct CacheConfig {
+    /// Set how long a cached resource is valid before it's considered stale
+    /// and needs to be refetched. Set to `never` or `0` to avoid caching
+    /// the resource, `forever` to keep the cached copy forever (or until
+    /// it's evicted by other means), or to a number of seconds or duration
+    /// value.
+    #[serde(default = "CacheConfigMaxAge::forever")]
+    pub max_age: CacheConfigMaxAge,
+}
+
+impl Default for CacheConfig {
+    fn default() -> Self {
+        Self {
+            max_age: CacheConfigMaxAge::forever(),
+        }
+    }
+}
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[serde(untagged)]
+pub enum CacheConfigMaxAge {
+    Seconds(i64),
+    Duration(
+        #[serde(serialize_with = "jiff::fmt::serde::duration::friendly::compact::required")]
+        jiff::SignedDuration,
+    ),
+    Other(CacheConfigMaxAgeOther),
+}
+
+impl CacheConfigMaxAge {
+    pub fn never() -> Self {
+        Self::Other(CacheConfigMaxAgeOther::Never)
+    }
+
+    pub fn forever() -> Self {
+        Self::Other(CacheConfigMaxAgeOther::Forever)
+    }
+}
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum CacheConfigMaxAgeOther {
+    Forever,
+    Never,
 }
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]

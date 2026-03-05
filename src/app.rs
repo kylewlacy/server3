@@ -50,9 +50,12 @@ async fn get_resource(
         })?;
 
     let path = uri.path().trim_matches('/');
-    let resource = cache.get(path).await?.ok_or_else(|| ResourceNotFound {
-        path: path.to_string(),
-    })?;
+    let resource = cache
+        .get(path, std::time::Instant::now())
+        .await?
+        .ok_or_else(|| ResourceNotFound {
+            path: path.to_string(),
+        })?;
     Ok(resource)
 }
 

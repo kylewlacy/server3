@@ -1,4 +1,5 @@
 use std::{
+    collections::HashMap,
     os::unix::fs::FileExt as _,
     path::PathBuf,
     sync::{Arc, atomic::AtomicU64},
@@ -85,6 +86,7 @@ impl CacheStorage {
 pub struct Cache<S> {
     storage: Arc<CacheStorage>,
     host_key: Arc<str>,
+    rules: Arc<CacheRouteRules>,
     upstream: S,
     cache_miss_count: metrics::Counter,
     cache_miss_bytes: metrics::Counter,
@@ -99,9 +101,15 @@ pub struct Cache<S> {
 }
 
 impl<S> Cache<S> {
-    pub fn new(storage: Arc<CacheStorage>, host_key: Arc<str>, upstream: S) -> Self {
+    pub fn new(
+        storage: Arc<CacheStorage>,
+        host_key: Arc<str>,
+        rules: Arc<CacheRouteRules>,
+        upstream: S,
+    ) -> Self {
         Self {
             storage,
+            rules,
             upstream,
             cache_miss_count: metrics::counter!("cache_miss_count", "host" => host_key.clone()),
             cache_miss_bytes: metrics::counter!("cache_miss_bytes", "host" => host_key.clone()),
@@ -122,18 +130,55 @@ impl<S> Cache<S>
 where
     S: Upstream + Send + Sync,
 {
-    pub async fn get(&self, path: &str) -> Result<Option<UpstreamResource>, UpstreamError> {
+    pub async fn get(
+        &self,
+        path: &str,
+        now: std::time::Instant,
+    ) -> Result<Option<UpstreamResource>, UpstreamError> {
+        // TODO: Stop stripping incoming leading `/`!
+        let match_path = format!("/{path}");
+        let (rule, matched_path) = self.rules.match_route(&match_path);
+        tracing::trace!(
+            ?path,
+            pattern = matched_path.map(|path| path.pattern()),
+            ?rule,
+            "looked up cache rule for route"
+        );
+
         let cache_key = CachedResourceKey {
             host: self.host_key.clone(),
             path: path.to_string(),
         };
         let init_id = uuid::Uuid::new_v4();
 
+        let max_age = match rule {
+            CacheRouteRule::Enabled(CacheEnabledRouteRule { max_age }) => max_age,
+            CacheRouteRule::Disabled => {
+                // TODO: Track metric for this case
+                return Ok(None);
+            }
+        };
+        let new_resource_expires_after = match max_age {
+            CacheMaxAgeRule::CacheForever => None,
+            CacheMaxAgeRule::CacheFor(duration) => Some(now.checked_add(*duration).unwrap()),
+            CacheMaxAgeRule::CacheNever => {
+                // TODO: Track metric for this case
+                // TODO: Return metadata as a header (hit/miss/not_found/unrouted/uncached)?
+                // TODO: use same metric name with different labels for each type?
+                return self.upstream.get(path).await;
+            }
+        };
+
         let cell = {
             let mut cached_objects = self.storage.cached_objects.lock().await;
-            cached_objects
-                .get_or_insert(cache_key.clone(), || Arc::new(OnceCell::new()))
-                .clone()
+
+            let cell =
+                cached_objects.get_or_insert_mut_ref(&cache_key, || Arc::new(OnceCell::new()));
+            if cell.get().is_some_and(|resource| resource.is_expired(now)) {
+                *cell = Arc::new(OnceCell::new());
+            }
+
+            cell.clone()
         };
         let result = cell
             .get_or_try_init(async || {
@@ -151,7 +196,14 @@ where
                     .into_data_stream()
                     .map_err(std::io::Error::other);
                 let content = tokio_util::io::StreamReader::new(content);
-                let file = create_cached_resource(init_id, self, object.headers, content).await;
+                let file = create_cached_resource(
+                    init_id,
+                    new_resource_expires_after,
+                    self,
+                    object.headers,
+                    content,
+                )
+                .await;
                 let file = match file {
                     Ok(file) => file,
                     Err(err) => {
@@ -199,6 +251,114 @@ where
     }
 }
 
+#[derive(Debug)]
+pub struct CacheRouteRules {
+    default: CacheRouteRule,
+    routes: path_tree::PathTree<CacheRouteRule>,
+}
+
+impl CacheRouteRules {
+    pub fn from_config(
+        cache_config: &crate::config::CacheConfig,
+        routes_config: &HashMap<String, crate::config::RouteConfig>,
+    ) -> Self {
+        let mut routes = Self::new(CacheRouteRule::Enabled(cache_config.clone().into()));
+        for (path, route) in routes_config {
+            routes.add_route(path, route.clone().into());
+        }
+        routes
+    }
+
+    pub fn new(default: CacheRouteRule) -> Self {
+        Self {
+            default,
+            routes: path_tree::PathTree::new(),
+        }
+    }
+
+    pub fn add_route(&mut self, path: &str, rule: CacheRouteRule) {
+        let _ = self.routes.insert(path, rule);
+    }
+
+    fn match_route<'a, 'b>(
+        &'a self,
+        path: &'b str,
+    ) -> (&'a CacheRouteRule, Option<path_tree::Path<'a, 'b>>) {
+        if let Some((rule, path)) = self.routes.find(path) {
+            (rule, Some(path))
+        } else {
+            (&self.default, None)
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy)]
+pub enum CacheRouteRule {
+    Enabled(CacheEnabledRouteRule),
+    Disabled,
+}
+
+impl From<crate::config::RouteConfig> for CacheRouteRule {
+    fn from(value: crate::config::RouteConfig) -> Self {
+        match value {
+            crate::config::RouteConfig::Disabled(crate::config::DisabledRoute::Disabled) => {
+                Self::Disabled
+            }
+            crate::config::RouteConfig::Enabled { cache } => Self::Enabled(cache.into()),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy)]
+pub struct CacheEnabledRouteRule {
+    pub max_age: CacheMaxAgeRule,
+}
+
+impl From<crate::config::CacheConfig> for CacheEnabledRouteRule {
+    fn from(value: crate::config::CacheConfig) -> Self {
+        let crate::config::CacheConfig { max_age } = value;
+        Self {
+            max_age: max_age.into(),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy)]
+pub enum CacheMaxAgeRule {
+    CacheForever,
+    CacheFor(std::time::Duration),
+    CacheNever,
+}
+
+impl From<crate::config::CacheConfigMaxAge> for CacheMaxAgeRule {
+    fn from(value: crate::config::CacheConfigMaxAge) -> Self {
+        match value {
+            crate::config::CacheConfigMaxAge::Seconds(seconds) => {
+                if seconds > 0 {
+                    Self::CacheFor(std::time::Duration::from_secs(
+                        seconds.try_into().expect("duration overflowed"),
+                    ))
+                } else {
+                    Self::CacheNever
+                }
+            }
+            crate::config::CacheConfigMaxAge::Duration(duration) => {
+                if duration.is_positive() {
+                    Self::CacheFor(duration.try_into().expect("duration overflowed"))
+                } else {
+                    Self::CacheNever
+                }
+            }
+            crate::config::CacheConfigMaxAge::Other(
+                crate::config::CacheConfigMaxAgeOther::Forever,
+            ) => Self::CacheForever,
+            crate::config::CacheConfigMaxAge::Other(
+                crate::config::CacheConfigMaxAgeOther::Never,
+            ) => Self::CacheNever,
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 struct CachedResourceKey {
     host: Arc<str>,
@@ -207,6 +367,7 @@ struct CachedResourceKey {
 
 async fn create_cached_resource<S>(
     id: uuid::Uuid,
+    expires_at: Option<std::time::Instant>,
     cache: &Cache<S>,
     headers: UpstreamResourceHeaders,
     mut body: impl tokio::io::AsyncBufRead + Unpin,
@@ -277,6 +438,7 @@ async fn create_cached_resource<S>(
 
     Ok(CachedResource {
         id,
+        expires_at,
         headers,
         file,
         size,
@@ -332,11 +494,18 @@ struct CachedResource {
     headers: UpstreamResourceHeaders,
     file: tokio::fs::File,
     size: u64,
+    expires_at: Option<std::time::Instant>,
     cache_eviction_count: metrics::Counter,
     cache_eviction_bytes: metrics::Counter,
     cache_disk_file_count: metrics::Gauge,
     cache_disk_bytes: metrics::Gauge,
     _reservation: CacheCapacityReservation,
+}
+
+impl CachedResource {
+    pub fn is_expired(&self, now: std::time::Instant) -> bool {
+        self.expires_at.is_some_and(|expires_at| expires_at <= now)
+    }
 }
 
 impl Drop for CachedResource {

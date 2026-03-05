@@ -40,10 +40,16 @@ async fn main() -> anyhow::Result<()> {
     let cache_storage = server3::cache::CacheStorage::new(config.storage)?;
     let cache_storage = Arc::new(cache_storage);
 
+    let routes = server3::cache::CacheRouteRules::from_config(&config.cache, &config.routes);
+    let routes = Arc::new(routes);
     let upstream = if let Some(upstream) = config.upstream {
         let upstream = build_upstream(upstream)?;
-        let upstream =
-            server3::cache::Cache::new(cache_storage.clone(), "DEFAULT".into(), upstream);
+        let upstream = server3::cache::Cache::new(
+            cache_storage.clone(),
+            "DEFAULT".into(),
+            routes.clone(),
+            upstream,
+        );
         Some(upstream)
     } else {
         None
@@ -53,6 +59,10 @@ async fn main() -> anyhow::Result<()> {
         .into_iter()
         .filter_map(|(host, host_config)| {
             let host = Arc::<str>::from(host);
+            let host_cache = host_config.cache.as_ref().unwrap_or(&config.cache);
+            let host_routes = host_config.routes.as_ref().unwrap_or(&config.routes);
+            let routes = server3::cache::CacheRouteRules::from_config(host_cache, host_routes);
+
             let upstream = host_config.upstream?;
             let upstream = build_upstream(upstream);
             let upstream = match upstream {
@@ -61,8 +71,12 @@ async fn main() -> anyhow::Result<()> {
                     return Some(Err(error));
                 }
             };
-            let upstream =
-                server3::cache::Cache::new(cache_storage.clone(), host.clone(), upstream);
+            let upstream = server3::cache::Cache::new(
+                cache_storage.clone(),
+                host.clone(),
+                Arc::new(routes),
+                upstream,
+            );
             Some(Ok((host, upstream)))
         })
         .collect::<anyhow::Result<HashMap<_, _>>>()?;

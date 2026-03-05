@@ -3,7 +3,7 @@ use std::{collections::HashMap, sync::Arc};
 use axum::{Json, extract::State};
 use reqwest::StatusCode;
 
-use crate::upstream::{Upstream, UpstreamResource};
+use crate::upstream::{ArcUpstream, Upstream, UpstreamResource, cache::CacheUpstream};
 
 pub fn router(state: AppState) -> axum::Router {
     axum::Router::new()
@@ -13,12 +13,15 @@ pub fn router(state: AppState) -> axum::Router {
 
 #[derive(Clone)]
 pub struct AppState {
-    pub upstream: Option<Arc<dyn Upstream + Send + Sync>>,
-    pub host_upstreams: Arc<HashMap<Arc<str>, Arc<dyn Upstream + Send + Sync>>>,
+    pub upstream: Option<CacheUpstream<ArcUpstream>>,
+    pub host_upstreams: Arc<HashMap<Arc<str>, CacheUpstream<ArcUpstream>>>,
 }
 
 impl AppState {
-    fn upstream_for_host(&self, host: Option<&str>) -> Option<&Arc<dyn Upstream + Send + Sync>> {
+    fn upstream_for_host(
+        &self,
+        host: Option<&str>,
+    ) -> Option<&CacheUpstream<Arc<dyn Upstream + Send + Sync>>> {
         host.and_then(|host| self.host_upstreams.get(host))
             .or(self.upstream.as_ref())
     }

@@ -4,7 +4,7 @@ use clap::Parser;
 use figment::providers::Format as _;
 use tracing_subscriber::{layer::SubscriberExt as _, util::SubscriberInitExt as _};
 
-use server3::upstream::http::HttpUpstream;
+use server3::upstream::{ArcUpstream, cache::CacheUpstream, http::HttpUpstream};
 
 #[derive(Debug, Clone, Parser)]
 enum Args {
@@ -41,7 +41,9 @@ async fn main() -> anyhow::Result<()> {
     let cache_storage = Arc::new(cache_storage);
 
     let upstream = if let Some(upstream) = config.upstream {
-        Some(build_upstream(cache_storage.clone(), None, upstream)?)
+        let upstream = build_upstream(upstream)?;
+        let upstream = CacheUpstream::new(cache_storage.clone(), "DEFAULT".into(), upstream);
+        Some(upstream)
     } else {
         None
     };
@@ -51,13 +53,14 @@ async fn main() -> anyhow::Result<()> {
         .filter_map(|(host, host_config)| {
             let host = Arc::<str>::from(host);
             let upstream = host_config.upstream?;
-            let upstream = build_upstream(cache_storage.clone(), Some(host.clone()), upstream);
+            let upstream = build_upstream(upstream);
             let upstream = match upstream {
                 Ok(upstream) => upstream,
                 Err(error) => {
                     return Some(Err(error));
                 }
             };
+            let upstream = CacheUpstream::new(cache_storage.clone(), host.clone(), upstream);
             Some(Ok((host, upstream)))
         })
         .collect::<anyhow::Result<HashMap<_, _>>>()?;
@@ -190,21 +193,11 @@ async fn request_metrics_middleware(
     response
 }
 
-fn build_upstream(
-    storage: Arc<server3::upstream::cache::CacheStorage>,
-    host: Option<Arc<str>>,
-    upstream: server3::config::UpstreamConfig,
-) -> anyhow::Result<Arc<dyn server3::upstream::Upstream + Send + Sync>> {
-    let upstream = match upstream {
-        server3::config::UpstreamConfig::Http(upstream) => HttpUpstream::new(upstream)?,
+fn build_upstream(config: server3::config::UpstreamConfig) -> anyhow::Result<ArcUpstream> {
+    let upstream = match config {
+        server3::config::UpstreamConfig::Http(config) => Arc::new(HttpUpstream::new(config)?),
     };
-    let upstream = server3::upstream::cache::CacheUpstream::new(
-        storage,
-        host.unwrap_or_else(|| "DEFAULT".into()),
-        upstream,
-    )?;
-
-    Ok(Arc::new(upstream))
+    Ok(upstream)
 }
 
 enum Styx {}

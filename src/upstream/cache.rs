@@ -81,6 +81,7 @@ impl CacheStorage {
     }
 }
 
+#[derive(Clone)]
 pub struct CacheUpstream<S> {
     storage: Arc<CacheStorage>,
     host_key: Arc<str>,
@@ -98,12 +99,8 @@ pub struct CacheUpstream<S> {
 }
 
 impl<S> CacheUpstream<S> {
-    pub fn new(
-        storage: Arc<CacheStorage>,
-        host_key: Arc<str>,
-        upstream: S,
-    ) -> anyhow::Result<Self> {
-        Ok(Self {
+    pub fn new(storage: Arc<CacheStorage>, host_key: Arc<str>, upstream: S) -> Self {
+        Self {
             storage,
             upstream,
             cache_miss_count: metrics::counter!("cache_miss_count", "host" => host_key.clone()),
@@ -117,7 +114,7 @@ impl<S> CacheUpstream<S> {
             cache_disk_file_count: metrics::gauge!("cache_disk_file_count", "host" => host_key.clone()),
             cache_disk_bytes: metrics::gauge!("cache_disk_bytes", "host" => host_key.clone()),
             host_key,
-        })
+        }
     }
 }
 

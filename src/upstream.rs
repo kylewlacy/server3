@@ -1,3 +1,5 @@
+use std::sync::Arc;
+
 pub mod cache;
 pub mod http;
 
@@ -5,6 +7,18 @@ pub mod http;
 pub trait Upstream {
     async fn get(&self, path: &str) -> Result<Option<UpstreamResource>, UpstreamError>;
 }
+
+#[async_trait::async_trait]
+impl<T: ?Sized + Send + Sync> Upstream for Arc<T>
+where
+    T: Upstream,
+{
+    async fn get(&self, path: &str) -> Result<Option<UpstreamResource>, UpstreamError> {
+        (**self).get(path).await
+    }
+}
+
+pub type ArcUpstream = Arc<dyn Upstream + Send + Sync>;
 
 pub struct UpstreamResource {
     pub headers: UpstreamResourceHeaders,

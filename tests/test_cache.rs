@@ -21,8 +21,7 @@ async fn test_cache_object() {
         Arc::new(storage),
         "host".into(),
         upstream_store,
-    )
-    .unwrap();
+    );
 
     // Put an object in the upstream server
     let key = "/foo/bar.txt";
@@ -55,8 +54,7 @@ async fn test_cache_object_content_type() {
         Arc::new(storage),
         "host".into(),
         upstream_store,
-    )
-    .unwrap();
+    );
 
     // Put some objects in the upstream store with various
     // Content-Type values
@@ -183,8 +181,7 @@ async fn test_cache_max_objects() {
         Arc::new(storage),
         "host".into(),
         upstream_store,
-    )
-    .unwrap();
+    );
 
     // Add 3 objects to the upstream cache
     let object_1_mock = mock_server
@@ -282,8 +279,7 @@ async fn test_cache_max_disk_capacity() {
         Arc::new(storage),
         "host".into(),
         upstream_store,
-    )
-    .unwrap();
+    );
 
     let bytes_1x100 = vec![1u8; 100];
     let bytes_2x100 = vec![2u8; 100];
@@ -418,22 +414,19 @@ async fn test_cache_partition_by_host_key() {
         storage.clone(),
         "host-a".into(),
         upstream_store_a,
-    )
-    .unwrap();
+    );
 
     // `cache_b1` and `cache_b2` share the same host key, and so overlap in the cache
     let cache_b1 = server3::upstream::cache::CacheUpstream::new(
         storage.clone(),
         "host-b".into(),
         upstream_store_b1,
-    )
-    .unwrap();
+    );
     let cache_b2 = server3::upstream::cache::CacheUpstream::new(
         storage.clone(),
         "host-b".into(),
         upstream_store_b2,
-    )
-    .unwrap();
+    );
 
     // Put the same object in the upstream for both a and b1
     let a_foo_mock = mock_server

@@ -49,12 +49,11 @@ async fn get_resource(
             hostname: hostname.map(ToString::to_string),
         })?;
 
-    let path = uri.path().trim_matches('/');
     let resource = cache
-        .get(path, std::time::Instant::now())
+        .get(uri.path(), std::time::Instant::now())
         .await?
         .ok_or_else(|| ResourceNotFound {
-            path: path.to_string(),
+            path: uri.path().to_string(),
         })?;
     Ok(resource)
 }

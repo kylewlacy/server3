@@ -40,6 +40,10 @@ impl HttpUpstream {
 #[async_trait::async_trait]
 impl Upstream for HttpUpstream {
     async fn get(&self, path: &str) -> Result<Option<UpstreamResource>, UpstreamError> {
+        // Trim leading '/' characters so the path is treated
+        // as a subpath of the base URL
+        let path = path.trim_start_matches('/');
+
         let url = self.url.join(path)?;
 
         let response = self.reqwest.get(url).send().await?;

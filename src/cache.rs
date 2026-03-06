@@ -135,9 +135,7 @@ where
         path: &str,
         now: std::time::Instant,
     ) -> Result<Option<UpstreamResource>, UpstreamError> {
-        // TODO: Stop stripping incoming leading `/`!
-        let match_path = format!("/{path}");
-        let (rule, matched_path) = self.rules.match_route(&match_path);
+        let (rule, matched_path) = self.rules.match_route(path);
         tracing::trace!(
             ?path,
             pattern = matched_path.map(|path| path.pattern()),

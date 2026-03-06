@@ -81,8 +81,8 @@ pub enum UpstreamConfig {
     /// object stores like S3. A few notable defaults:
     ///
     /// - Only `GET` requests are proxied.
-    /// - Request paths are normalized by stripping extra leading or
-    ///   trailing `/`s.
+    /// - Request paths are normalized by stripping extra leading `/`s (but
+    ///   not trailing `/`s).
     /// - Query strings and request headers are not forwarded.
     /// - Upstream `Cache-Control` headers are ignored. The configuration
     ///   alone decides if and how long cache entries are persisted.
@@ -98,7 +98,12 @@ pub enum UpstreamConfig {
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct UpstreamHttpConfig {
-    /// The upstream server URL.
+    /// The upstream server URL. Incoming requests are joined with this URL
+    /// to pick the upstream resource to retrieve.
+    ///
+    /// Determining the upstream URL follows the semantics of the method
+    /// [`url::Url::join`]. For a subpath, the URL should end in a `/` to
+    /// avoid the final path component from getting removed.
     pub url: url::Url,
 
     /// The total time before the upstream request times out. Defaults to

@@ -7,18 +7,20 @@ use server3::{
 };
 use tracing_subscriber::{layer::SubscriberExt as _, util::SubscriberInitExt as _};
 
-pub async fn object_to_bytes(object: UpstreamResource) -> bstr::BString {
-    let bytes = axum::body::to_bytes(object.body, 10_000_000).await.unwrap();
+pub async fn resource_to_bytes(resource: UpstreamResource) -> bstr::BString {
+    let bytes = axum::body::to_bytes(resource.body, 10_000_000)
+        .await
+        .unwrap();
     bytes.to_vec().into()
 }
 
-pub async fn object_to_string(object: UpstreamResource) -> String {
-    let bytes = object_to_bytes(object).await;
+pub async fn resource_to_string(resource: UpstreamResource) -> String {
+    let bytes = resource_to_bytes(resource).await;
     String::from_utf8(bytes.into()).unwrap()
 }
 
-pub fn object_content_type(object: &UpstreamResource) -> Option<&bstr::BStr> {
-    object
+pub fn resource_content_type(resource: &UpstreamResource) -> Option<&bstr::BStr> {
+    resource
         .headers
         .content_type
         .as_ref()

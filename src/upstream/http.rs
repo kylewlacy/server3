@@ -54,11 +54,11 @@ impl Upstream for HttpUpstream {
         let response = response.error_for_status()?;
         let content_type = response.headers().get("content-type").cloned();
         let body = axum_body_from_reqwest_response(response);
-        let object = UpstreamResource {
+        let resource = UpstreamResource {
             body,
             headers: UpstreamResourceHeaders { content_type },
         };
-        Ok(Some(object))
+        Ok(Some(resource))
     }
 }
 

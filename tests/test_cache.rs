@@ -8,13 +8,13 @@ use server3::{
 
 use crate::test_utils::{
     cache_config, cache_routes_forever, mockito_http_store, mockito_http_store_with_prefix,
-    object_content_type, object_to_bytes, object_to_string, test_context,
+    resource_content_type, resource_to_bytes, resource_to_string, test_context,
 };
 
 mod test_utils;
 
 #[tokio::test]
-async fn test_cache_object() {
+async fn test_cache_resource() {
     let ctx = test_context();
     let now = std::time::Instant::now();
     let mut mock_server = mockito::Server::new_async().await;
@@ -28,28 +28,28 @@ async fn test_cache_object() {
         upstream_store,
     );
 
-    // Put an object in the upstream server
+    // Put a resource in the upstream server
     let key = "/foo/bar.txt";
-    let object_mock = mock_server
+    let resource_mock = mock_server
         .mock("GET", key)
-        .with_body("object data")
+        .with_body("resource data")
         .expect(1)
         .create();
 
-    // Validate that we can get the object via the cache
-    let object = cache.get(key, now).await.unwrap().unwrap();
-    assert_eq!(object_to_string(object).await, "object data");
+    // Validate that we can get the resource via the cache
+    let resource = cache.get(key, now).await.unwrap().unwrap();
+    assert_eq!(resource_to_string(resource).await, "resource data");
 
-    // Get the same object again, but it should be cached and so shouldn't
+    // Get the same resource again, but it should be cached and so shouldn't
     // trigger another upstream request.
-    let object = cache.get(key, now).await.unwrap().unwrap();
-    assert_eq!(object_to_string(object).await, "object data");
+    let resource = cache.get(key, now).await.unwrap().unwrap();
+    assert_eq!(resource_to_string(resource).await, "resource data");
 
-    object_mock.assert_async().await;
+    resource_mock.assert_async().await;
 }
 
 #[tokio::test]
-async fn test_cache_object_subpath_handling() {
+async fn test_cache_resource_subpath_handling() {
     let ctx = test_context();
     let now = std::time::Instant::now();
     let mut mock_server = mockito::Server::new_async().await;
@@ -84,13 +84,13 @@ async fn test_cache_object_subpath_handling() {
     // Validate that we can get each resource via the cache
 
     let resource = cache.get("/", now).await.unwrap().unwrap();
-    assert_eq!(object_to_string(resource).await, "foo");
+    assert_eq!(resource_to_string(resource).await, "foo");
 
     let resource = cache.get("/bar", now).await.unwrap().unwrap();
-    assert_eq!(object_to_string(resource).await, "bar");
+    assert_eq!(resource_to_string(resource).await, "bar");
 
     let resource = cache.get("/bar/", now).await.unwrap().unwrap();
-    assert_eq!(object_to_string(resource).await, "bar/");
+    assert_eq!(resource_to_string(resource).await, "bar/");
 
     foo_mock.assert_async().await;
     foo_bar_mock.assert_async().await;
@@ -98,7 +98,7 @@ async fn test_cache_object_subpath_handling() {
 }
 
 #[tokio::test]
-async fn test_cache_object_content_type() {
+async fn test_cache_resource_content_type() {
     let ctx = test_context();
     let now = std::time::Instant::now();
     let mut mock_server = mockito::Server::new_async().await;
@@ -112,7 +112,7 @@ async fn test_cache_object_content_type() {
         upstream_store,
     );
 
-    // Put some objects in the upstream store with various
+    // Put some resourcess in the upstream store with various
     // Content-Type values
     let bar_none_mock = mock_server
         .mock("GET", "/foo/bar")
@@ -156,59 +156,59 @@ async fn test_cache_object_content_type() {
         .expect(1)
         .create();
 
-    // Validate each of the objects has the right Content-Type. For good
-    // measure, get each object multiple times to make sure it's cached
+    // Validate each of the resourcess has the right Content-Type. For good
+    // measure, get each resource multiple times to make sure it's cached
 
     for _ in 0..5 {
-        let object = cache.get("/foo/bar", now).await.unwrap().unwrap();
-        assert_eq!(object_content_type(&object), None);
-        assert_eq!(object_to_string(object).await, "bar");
+        let resource = cache.get("/foo/bar", now).await.unwrap().unwrap();
+        assert_eq!(resource_content_type(&resource), None);
+        assert_eq!(resource_to_string(resource).await, "bar");
 
-        let object = cache.get("/foo/bar-bin", now).await.unwrap().unwrap();
+        let resource = cache.get("/foo/bar-bin", now).await.unwrap().unwrap();
         assert_eq!(
-            object_content_type(&object).unwrap(),
+            resource_content_type(&resource).unwrap(),
             BStr::new("application/octet-stream")
         );
-        assert_eq!(object_to_string(object).await, "bar.bin");
+        assert_eq!(resource_to_string(resource).await, "bar.bin");
 
-        let object = cache.get("/foo/bar-txt", now).await.unwrap().unwrap();
+        let resource = cache.get("/foo/bar-txt", now).await.unwrap().unwrap();
         assert_eq!(
-            object_content_type(&object).unwrap(),
+            resource_content_type(&resource).unwrap(),
             BStr::new("text/plain")
         );
-        assert_eq!(object_to_string(object).await, "text");
+        assert_eq!(resource_to_string(resource).await, "text");
 
-        let object = cache.get("/foo/bar-html", now).await.unwrap().unwrap();
+        let resource = cache.get("/foo/bar-html", now).await.unwrap().unwrap();
         assert_eq!(
-            object_content_type(&object).unwrap(),
+            resource_content_type(&resource).unwrap(),
             BStr::new("text/html")
         );
-        assert_eq!(object_to_string(object).await, "<html></html>");
+        assert_eq!(resource_to_string(resource).await, "<html></html>");
 
-        let object = cache.get("/foo/bar-json", now).await.unwrap().unwrap();
+        let resource = cache.get("/foo/bar-json", now).await.unwrap().unwrap();
         assert_eq!(
-            object_content_type(&object).unwrap(),
+            resource_content_type(&resource).unwrap(),
             BStr::new("application/json")
         );
         assert_eq!(
-            object_to_string(object).await,
+            resource_to_string(resource).await,
             "actually, this isn't valid json!"
         );
 
-        let object = cache.get("/foo/bar-custom", now).await.unwrap().unwrap();
+        let resource = cache.get("/foo/bar-custom", now).await.unwrap().unwrap();
         assert_eq!(
-            object_content_type(&object).unwrap(),
+            resource_content_type(&resource).unwrap(),
             BStr::new("application/x.custom")
         );
-        assert_eq!(object_to_string(object).await, "custom");
+        assert_eq!(resource_to_string(resource).await, "custom");
 
-        let object = cache.get("/foo/bar-invalid", now).await.unwrap().unwrap();
+        let resource = cache.get("/foo/bar-invalid", now).await.unwrap().unwrap();
         assert_eq!(
-            object_content_type(&object).unwrap(),
+            resource_content_type(&resource).unwrap(),
             BStr::new("not valid ascii 🤔")
         );
         assert_eq!(
-            object_to_bytes(object).await,
+            resource_to_bytes(resource).await,
             bstr::BStr::new(b"binary...\xFF")
         );
     }
@@ -223,7 +223,7 @@ async fn test_cache_object_content_type() {
 }
 
 #[tokio::test]
-async fn test_cache_max_objects() {
+async fn test_cache_max_resources() {
     let ctx = test_context();
     let now = std::time::Instant::now();
     let mut mock_server = mockito::Server::new_async().await;
@@ -241,85 +241,86 @@ async fn test_cache_max_objects() {
         upstream_store,
     );
 
-    // Add 3 objects to the upstream cache
-    let object_1_mock = mock_server
+    // Add 3 resources to the upstream cache
+    let resource_1_mock = mock_server
         .mock("GET", "/example-1.json")
         .with_body("example 1")
         .expect(1)
         .create();
-    let object_2_mock = mock_server
+    let resource_2_mock = mock_server
         .mock("GET", "/example-2.json")
         .with_body("example 2")
         .expect(1)
         .create();
-    let object_3_mock = mock_server
+    let resource_3_mock = mock_server
         .mock("GET", "/example-3.json")
         .with_body("example 3")
         .expect(1)
         .create();
 
-    // Query each upstream object 5 times
+    // Query each upstream resource 5 times
     for _ in 0..5 {
-        let object = cache.get("/example-1.json", now).await.unwrap().unwrap();
-        assert_eq!(object_to_string(object).await, "example 1");
+        let resource = cache.get("/example-1.json", now).await.unwrap().unwrap();
+        assert_eq!(resource_to_string(resource).await, "example 1");
 
-        let object = cache.get("/example-2.json", now).await.unwrap().unwrap();
-        assert_eq!(object_to_string(object).await, "example 2");
+        let resource = cache.get("/example-2.json", now).await.unwrap().unwrap();
+        assert_eq!(resource_to_string(resource).await, "example 2");
 
-        let object = cache.get("/example-3.json", now).await.unwrap().unwrap();
-        assert_eq!(object_to_string(object).await, "example 3");
+        let resource = cache.get("/example-3.json", now).await.unwrap().unwrap();
+        assert_eq!(resource_to_string(resource).await, "example 3");
     }
 
-    // At this point, object 1 is the least-recently used, followed by
-    // object 2, then object 3
+    // At this point, resource 1 is the least-recently used, followed by
+    // resource 2, then resource 3
 
     // Assert that each upstream project was fetched exactly once
-    object_1_mock.assert_async().await;
-    object_2_mock.assert_async().await;
-    object_3_mock.assert_async().await;
+    resource_1_mock.assert_async().await;
+    resource_2_mock.assert_async().await;
+    resource_3_mock.assert_async().await;
 
     // Now, remove the upstream mocks
-    object_1_mock.remove_async().await;
-    object_2_mock.remove_async().await;
-    object_3_mock.remove_async().await;
-    drop(object_1_mock);
-    drop(object_2_mock);
-    drop(object_3_mock);
+    resource_1_mock.remove_async().await;
+    resource_2_mock.remove_async().await;
+    resource_3_mock.remove_async().await;
+    drop(resource_1_mock);
+    drop(resource_2_mock);
+    drop(resource_3_mock);
 
-    // Add object 4 and 5 upstream, and add object 1 with a different body
-    let object_4_mock = mock_server
+    // Add resources 4 and 5 in the upstream, and add resource 1 with a
+    // different body
+    let resource_4_mock = mock_server
         .mock("GET", "/example-4.json")
         .with_body("example 4")
         .expect(1)
         .create();
-    let object_5_mock = mock_server
+    let resource_5_mock = mock_server
         .mock("GET", "/example-5.json")
         .with_body("example 5")
         .expect(1)
         .create();
-    let object_1_mock = mock_server
+    let resource_1_mock = mock_server
         .mock("GET", "/example-1.json")
         .with_body("example 1 new!")
         .expect(1)
         .create();
 
-    // Fetch object 4, which should evict object 1 from the cache
+    // Fetch resource 4, which should evict resource 1 from the cache
     let project_source = cache.get("/example-4.json", now).await.unwrap().unwrap();
-    assert_eq!(object_to_string(project_source).await, "example 4");
+    assert_eq!(resource_to_string(project_source).await, "example 4");
 
-    // Fetch object 5, which should evict object 2 from the cache
+    // Fetch resource 5, which should evict resource 2 from the cache
     let project_source = cache.get("/example-5.json", now).await.unwrap().unwrap();
-    assert_eq!(object_to_string(project_source).await, "example 5");
+    assert_eq!(resource_to_string(project_source).await, "example 5");
 
-    // Fetch object 1 again, which should evict object 3 from the cache
+    // Fetch resource 1 again, which should evict resource 3 from the cache
     let project_source = cache.get("/example-1.json", now).await.unwrap().unwrap();
-    assert_eq!(object_to_string(project_source).await, "example 1 new!");
+    assert_eq!(resource_to_string(project_source).await, "example 1 new!");
 
-    // Objects 4 and 5 should've been fetched once, and object 1 should've
+    // Resources 4 and 5 should've been fetched once, and resource 1 should've
     // been fetched again since it was evicted
-    object_4_mock.assert_async().await;
-    object_5_mock.assert_async().await;
-    object_1_mock.assert_async().await;
+    resource_4_mock.assert_async().await;
+    resource_5_mock.assert_async().await;
+    resource_1_mock.assert_async().await;
 }
 
 #[tokio::test]
@@ -345,116 +346,116 @@ async fn test_cache_max_disk_capacity() {
     let bytes_2x100 = vec![2u8; 100];
     let bytes_3x100 = vec![3u8; 100];
 
-    // Add three 1 KB objects to the upstream cache
-    let object_1_mock = mock_server
+    // Add three 1 KB resources to the upstream cache
+    let resource_1_mock = mock_server
         .mock("GET", "/example-1.bin")
         .with_body(&bytes_1x100)
         .expect(1)
         .create();
-    let object_2_mock = mock_server
+    let resource_2_mock = mock_server
         .mock("GET", "/example-2.bin")
         .with_body(&bytes_2x100)
         .expect(1)
         .create();
-    let object_3_mock = mock_server
+    let resource_3_mock = mock_server
         .mock("GET", "/example-3.bin")
         .with_body(&bytes_3x100)
         .expect(1)
         .create();
 
-    // Query each object 5 times
+    // Query each resource 5 times
     for _ in 0..5 {
-        let object_1 = cache.get("/example-1.bin", now).await.unwrap().unwrap();
-        assert_eq!(object_to_bytes(object_1).await, bytes_1x100);
+        let resource_1 = cache.get("/example-1.bin", now).await.unwrap().unwrap();
+        assert_eq!(resource_to_bytes(resource_1).await, bytes_1x100);
 
         let example_2 = cache.get("/example-2.bin", now).await.unwrap().unwrap();
-        assert_eq!(object_to_bytes(example_2).await, bytes_2x100);
+        assert_eq!(resource_to_bytes(example_2).await, bytes_2x100);
 
         let example_3 = cache.get("/example-3.bin", now).await.unwrap().unwrap();
-        assert_eq!(object_to_bytes(example_3).await, bytes_3x100);
+        assert_eq!(resource_to_bytes(example_3).await, bytes_3x100);
     }
 
-    // At this point, object 1 is the least-recently used, followed by
-    // object 2, then object 3
+    // At this point, resource 1 is the least-recently used, followed by
+    // resource 2, then resource 3
 
-    // Assert that each upstream object was fetched exactly once
-    object_1_mock.assert_async().await;
-    object_2_mock.assert_async().await;
-    object_3_mock.assert_async().await;
+    // Assert that each upstream resource was fetched exactly once
+    resource_1_mock.assert_async().await;
+    resource_2_mock.assert_async().await;
+    resource_3_mock.assert_async().await;
 
     // Now, remove the upstream mocks
-    object_1_mock.remove_async().await;
-    object_2_mock.remove_async().await;
-    object_3_mock.remove_async().await;
-    drop(object_1_mock);
-    drop(object_2_mock);
-    drop(object_3_mock);
+    resource_1_mock.remove_async().await;
+    resource_2_mock.remove_async().await;
+    resource_3_mock.remove_async().await;
+    drop(resource_1_mock);
+    drop(resource_2_mock);
+    drop(resource_3_mock);
 
-    // Add objects 4 and 5 upstream, and re-add object 1 with
+    // Add resources 4 and 5 upstream, and re-add resource 1 with
     // different contents
     let bytes_4x100 = vec![4u8; 100];
     let bytes_5x100 = vec![5u8; 100];
     let bytes_6x100 = vec![6u8; 100];
-    let object_4_mock = mock_server
+    let resource_4_mock = mock_server
         .mock("GET", "/example-4.bin")
         .with_body(&bytes_4x100)
         .expect(1)
         .create();
-    let object_5_mock = mock_server
+    let resource_5_mock = mock_server
         .mock("GET", "/example-5.bin")
         .with_body(&bytes_5x100)
         .expect(1)
         .create();
-    let object_1_mock = mock_server
+    let resource_1_mock = mock_server
         .mock("GET", "/example-1.bin")
         .with_body(&bytes_6x100)
         .expect(1)
         .create();
 
-    // Fetch object 4, which should evict object 1 from the cache
-    let object_4 = cache.get("/example-4.bin", now).await.unwrap().unwrap();
-    assert_eq!(object_to_bytes(object_4).await, bytes_4x100);
+    // Fetch resource 4, which should evict resource 1 from the cache
+    let resource_4 = cache.get("/example-4.bin", now).await.unwrap().unwrap();
+    assert_eq!(resource_to_bytes(resource_4).await, bytes_4x100);
 
-    // Fetch object 5, which should evict object 2 from the cache
-    let object_5 = cache.get("/example-5.bin", now).await.unwrap().unwrap();
-    assert_eq!(object_to_bytes(object_5).await, bytes_5x100);
+    // Fetch resource 5, which should evict resource 2 from the cache
+    let resource_5 = cache.get("/example-5.bin", now).await.unwrap().unwrap();
+    assert_eq!(resource_to_bytes(resource_5).await, bytes_5x100);
 
-    // Fetch object 1 again, which should evict object 3
+    // Fetch resource 1 again, which should evict resource 3
     // from the cache
-    let object_1 = cache.get("/example-1.bin", now).await.unwrap().unwrap();
-    assert_eq!(object_to_bytes(object_1).await, bytes_6x100);
+    let resource_1 = cache.get("/example-1.bin", now).await.unwrap().unwrap();
+    assert_eq!(resource_to_bytes(resource_1).await, bytes_6x100);
 
-    // Object 1 (again), 4, and 5 should've all been fetched
+    // Resource 1 (again), 4, and 5 should've all been fetched
     // from upstream once
-    object_4_mock.assert_async().await;
-    object_5_mock.assert_async().await;
-    object_1_mock.assert_async().await;
+    resource_4_mock.assert_async().await;
+    resource_5_mock.assert_async().await;
+    resource_1_mock.assert_async().await;
 
     // Remove the upstream mocks
-    object_4_mock.remove_async().await;
-    object_5_mock.remove_async().await;
-    object_1_mock.remove_async().await;
-    drop(object_4_mock);
-    drop(object_5_mock);
-    drop(object_1_mock);
+    resource_4_mock.remove_async().await;
+    resource_5_mock.remove_async().await;
+    resource_1_mock.remove_async().await;
+    drop(resource_4_mock);
+    drop(resource_5_mock);
+    drop(resource_1_mock);
 
-    // Add object 6, which fully fills the cache on its own and so
+    // Add resource 6, which fully fills the cache on its own and so
     // evicts everything else
     let bytes_7x499 = vec![7u8; 499];
-    let object_6_mock = mock_server
+    let resource_6_mock = mock_server
         .mock("GET", "/example-6.bin")
         .with_body(&bytes_7x499)
         .expect(1)
         .create();
 
-    // Fetch object 6 five times
+    // Fetch resource 6 five times
     for _ in 0..5 {
-        let object_6 = cache.get("/example-6.bin", now).await.unwrap().unwrap();
-        assert_eq!(object_to_bytes(object_6).await, bytes_7x499);
+        let resource_6 = cache.get("/example-6.bin", now).await.unwrap().unwrap();
+        assert_eq!(resource_to_bytes(resource_6).await, bytes_7x499);
     }
 
-    // Make sure object 6 was only fetched once
-    object_6_mock.assert_async().await;
+    // Make sure resource 6 was only fetched once
+    resource_6_mock.assert_async().await;
 }
 
 #[tokio::test]
@@ -492,7 +493,7 @@ async fn test_cache_partition_by_host_key() {
         upstream_store_b2,
     );
 
-    // Put the same object in the upstream for both a and b1
+    // Put the same resource in the upstream for both a and b1
     let a_foo_mock = mock_server
         .mock("GET", "/a/foo.txt")
         .with_body("a foo")
@@ -516,27 +517,27 @@ async fn test_cache_partition_by_host_key() {
         .create();
 
     // Get foo.txt from a, which should fetch from the upstream
-    let object = cache_a.get("/foo.txt", now).await.unwrap().unwrap();
-    assert_eq!(object_to_string(object).await, "a foo");
+    let resource = cache_a.get("/foo.txt", now).await.unwrap().unwrap();
+    assert_eq!(resource_to_string(resource).await, "a foo");
 
     // Get foo.txt from b1. Since it has a separate host key, it should
     // be distinct from foo.txt from a.
-    let object = cache_b1.get("/foo.txt", now).await.unwrap().unwrap();
-    assert_eq!(object_to_string(object).await, "b1 foo");
+    let resource = cache_b1.get("/foo.txt", now).await.unwrap().unwrap();
+    assert_eq!(resource_to_string(resource).await, "b1 foo");
 
     // Get foo.txt from b2. Since it has the same host key as b1, it should
     // re-use the cached result from b1.
-    let object = cache_b2.get("/foo.txt", now).await.unwrap().unwrap();
-    assert_eq!(object_to_string(object).await, "b1 foo");
+    let resource = cache_b2.get("/foo.txt", now).await.unwrap().unwrap();
+    assert_eq!(resource_to_string(resource).await, "b1 foo");
 
     // Try to get bar.txt from b1. Upstream returns a 404, so it should
     // not be returned.
-    let object = cache_b1.get("/bar.txt", now).await.unwrap();
-    assert!(object.is_none());
+    let resource = cache_b1.get("/bar.txt", now).await.unwrap();
+    assert!(resource.is_none());
 
     // Get bar.txt from b2
-    let object = cache_b2.get("/bar.txt", now).await.unwrap().unwrap();
-    assert_eq!(object_to_string(object).await, "b2 bar");
+    let resource = cache_b2.get("/bar.txt", now).await.unwrap().unwrap();
+    assert_eq!(resource_to_string(resource).await, "b2 bar");
 
     a_foo_mock.assert_async().await;
     b1_foo_mock.assert_async().await;
@@ -598,15 +599,15 @@ async fn test_cache_max_age() {
             .expect(1)
             .create();
 
-        let object = cache.get("/cache-for-2s", now).await.unwrap().unwrap();
-        assert_eq!(object_to_string(object).await, "A");
+        let resource = cache.get("/cache-for-2s", now).await.unwrap().unwrap();
+        assert_eq!(resource_to_string(resource).await, "A");
 
-        let object = cache
+        let resource = cache
             .get("/cache-for-2s", now + Duration::from_secs(1))
             .await
             .unwrap()
             .unwrap();
-        assert_eq!(object_to_string(object).await, "A");
+        assert_eq!(resource_to_string(resource).await, "A");
 
         cache_for_2s_mock.assert_async().await;
         cache_for_2s_mock.remove_async().await;
@@ -616,19 +617,19 @@ async fn test_cache_max_age() {
             .expect(1)
             .create();
 
-        let object = cache
+        let resource = cache
             .get("/cache-for-2s", now + Duration::from_secs(2))
             .await
             .unwrap()
             .unwrap();
-        assert_eq!(object_to_string(object).await, "B");
+        assert_eq!(resource_to_string(resource).await, "B");
 
-        let object = cache
+        let resource = cache
             .get("/cache-for-2s", now + Duration::from_secs(3))
             .await
             .unwrap()
             .unwrap();
-        assert_eq!(object_to_string(object).await, "B");
+        assert_eq!(resource_to_string(resource).await, "B");
 
         cache_for_2s_mock.assert_async().await;
         cache_for_2s_mock.remove_async().await;
@@ -638,11 +639,11 @@ async fn test_cache_max_age() {
             .expect(1)
             .create();
 
-        let object = cache
+        let resource = cache
             .get("/cache-for-2s", now + Duration::from_secs(4))
             .await
             .unwrap();
-        assert!(object.is_none());
+        assert!(resource.is_none());
 
         cache_for_2s_mock.assert_async().await;
         cache_for_2s_mock.remove_async().await;
@@ -657,15 +658,15 @@ async fn test_cache_max_age() {
             .expect(1)
             .create();
 
-        let object = cache.get("/cache-for-3s", now).await.unwrap().unwrap();
-        assert_eq!(object_to_string(object).await, "A");
+        let resource = cache.get("/cache-for-3s", now).await.unwrap().unwrap();
+        assert_eq!(resource_to_string(resource).await, "A");
 
-        let object = cache
+        let resource = cache
             .get("/cache-for-3s", now + Duration::from_secs(2))
             .await
             .unwrap()
             .unwrap();
-        assert_eq!(object_to_string(object).await, "A");
+        assert_eq!(resource_to_string(resource).await, "A");
 
         cache_for_3s_mock.assert_async().await;
         cache_for_3s_mock.remove_async().await;
@@ -675,19 +676,19 @@ async fn test_cache_max_age() {
             .expect(1)
             .create();
 
-        let object = cache
+        let resource = cache
             .get("/cache-for-3s", now + Duration::from_secs(3))
             .await
             .unwrap()
             .unwrap();
-        assert_eq!(object_to_string(object).await, "B");
+        assert_eq!(resource_to_string(resource).await, "B");
 
-        let object = cache
+        let resource = cache
             .get("/cache-for-3s", now + Duration::from_secs(5))
             .await
             .unwrap()
             .unwrap();
-        assert_eq!(object_to_string(object).await, "B");
+        assert_eq!(resource_to_string(resource).await, "B");
 
         cache_for_3s_mock.assert_async().await;
         cache_for_3s_mock.remove_async().await;
@@ -697,11 +698,11 @@ async fn test_cache_max_age() {
             .expect(1)
             .create();
 
-        let object = cache
+        let resource = cache
             .get("/cache-for-3s", now + Duration::from_secs(6))
             .await
             .unwrap();
-        assert!(object.is_none());
+        assert!(resource.is_none());
 
         cache_for_3s_mock.assert_async().await;
         cache_for_3s_mock.remove_async().await;
@@ -716,15 +717,15 @@ async fn test_cache_max_age() {
             .expect(1)
             .create();
 
-        let object = cache.get("/cache-for-3s", now).await.unwrap().unwrap();
-        assert_eq!(object_to_string(object).await, "A");
+        let resource = cache.get("/cache-for-3s", now).await.unwrap().unwrap();
+        assert_eq!(resource_to_string(resource).await, "A");
 
-        let object = cache
+        let resource = cache
             .get("/cache-for-3s", now + Duration::from_secs(2))
             .await
             .unwrap()
             .unwrap();
-        assert_eq!(object_to_string(object).await, "A");
+        assert_eq!(resource_to_string(resource).await, "A");
 
         cache_for_3s_mock.assert_async().await;
         cache_for_3s_mock.remove_async().await;
@@ -734,19 +735,19 @@ async fn test_cache_max_age() {
             .expect(1)
             .create();
 
-        let object = cache
+        let resource = cache
             .get("/cache-for-3s", now + Duration::from_secs(3))
             .await
             .unwrap()
             .unwrap();
-        assert_eq!(object_to_string(object).await, "B");
+        assert_eq!(resource_to_string(resource).await, "B");
 
-        let object = cache
+        let resource = cache
             .get("/cache-for-3s", now + Duration::from_secs(5))
             .await
             .unwrap()
             .unwrap();
-        assert_eq!(object_to_string(object).await, "B");
+        assert_eq!(resource_to_string(resource).await, "B");
 
         cache_for_3s_mock.assert_async().await;
         cache_for_3s_mock.remove_async().await;
@@ -756,11 +757,11 @@ async fn test_cache_max_age() {
             .expect(1)
             .create();
 
-        let object = cache
+        let resource = cache
             .get("/cache-for-3s", now + Duration::from_secs(6))
             .await
             .unwrap();
-        assert!(object.is_none());
+        assert!(resource.is_none());
 
         cache_for_3s_mock.assert_async().await;
         cache_for_3s_mock.remove_async().await;
@@ -781,7 +782,7 @@ async fn test_cache_max_age() {
             .create();
 
         let foo = cache.get("/cache-for-4s/foo", now).await.unwrap().unwrap();
-        assert_eq!(object_to_string(foo).await, "A");
+        assert_eq!(resource_to_string(foo).await, "A");
 
         let bar = cache.get("/cache-for-4s/bar", now).await.unwrap();
         assert!(bar.is_none());
@@ -791,7 +792,7 @@ async fn test_cache_max_age() {
             .await
             .unwrap()
             .unwrap();
-        assert_eq!(object_to_string(foo).await, "A");
+        assert_eq!(resource_to_string(foo).await, "A");
 
         cache_for_4s_foo_mock.assert_async().await;
         cache_for_4s_foo_mock.remove_async().await;
@@ -822,14 +823,14 @@ async fn test_cache_max_age() {
             .await
             .unwrap()
             .unwrap();
-        assert_eq!(object_to_string(bar).await, "C");
+        assert_eq!(resource_to_string(bar).await, "C");
 
         let bar = cache
             .get("/cache-for-4s/bar", now + Duration::from_secs(7))
             .await
             .unwrap()
             .unwrap();
-        assert_eq!(object_to_string(bar).await, "C");
+        assert_eq!(resource_to_string(bar).await, "C");
 
         cache_for_4s_foo_mock.assert_async().await;
         cache_for_4s_foo_mock.remove_async().await;
@@ -848,7 +849,7 @@ async fn test_cache_max_age() {
             .create();
 
         let foo = cache.get("/cache-forever/foo", now).await.unwrap().unwrap();
-        assert_eq!(object_to_string(foo).await, "A");
+        assert_eq!(resource_to_string(foo).await, "A");
 
         let foo = cache
             .get(
@@ -858,7 +859,7 @@ async fn test_cache_max_age() {
             .await
             .unwrap()
             .unwrap();
-        assert_eq!(object_to_string(foo).await, "A");
+        assert_eq!(resource_to_string(foo).await, "A");
 
         cache_forever_foo_mock.assert_async().await;
         cache_forever_foo_mock.remove_async().await;
@@ -875,7 +876,7 @@ async fn test_cache_max_age() {
             .create();
 
         let foo = cache.get("/cache-never/foo", now).await.unwrap().unwrap();
-        assert_eq!(object_to_string(foo).await, "A");
+        assert_eq!(resource_to_string(foo).await, "A");
 
         cache_never_foo_mock.assert_async().await;
         cache_never_foo_mock.remove_async().await;
@@ -887,7 +888,7 @@ async fn test_cache_max_age() {
             .create();
 
         let foo = cache.get("/cache-never/foo", now).await.unwrap().unwrap();
-        assert_eq!(object_to_string(foo).await, "B");
+        assert_eq!(resource_to_string(foo).await, "B");
 
         cache_never_foo_mock.assert_async().await;
         cache_never_foo_mock.remove_async().await;
@@ -903,7 +904,7 @@ async fn test_cache_max_age() {
             .await
             .unwrap()
             .unwrap();
-        assert_eq!(object_to_string(foo).await, "C");
+        assert_eq!(resource_to_string(foo).await, "C");
 
         cache_never_foo_mock.assert_async().await;
         cache_never_foo_mock.remove_async().await;

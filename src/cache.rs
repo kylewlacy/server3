@@ -18,7 +18,7 @@ use crate::{
 pub struct CacheStorage {
     cache_dir: PathBuf,
     capacity_pool: CacheCapacityPool,
-    cached_objects: Mutex<LruCache<CachedResourceKey, Arc<OnceCell<Arc<CachedResource>>>>>,
+    cached_resources: Mutex<LruCache<CachedResourceKey, Arc<OnceCell<Arc<CachedResource>>>>>,
 }
 
 impl CacheStorage {
@@ -77,7 +77,7 @@ impl CacheStorage {
         Ok(Self {
             capacity_pool: CacheCapacityPool::new(config.max_disk_capacity.as_u64()),
             cache_dir: config.dir,
-            cached_objects: Mutex::new(LruCache::new(max_cache_files.try_into().unwrap())),
+            cached_resources: Mutex::new(LruCache::new(max_cache_files.try_into().unwrap())),
         })
     }
 }
@@ -168,10 +168,10 @@ where
         };
 
         let cell = {
-            let mut cached_objects = self.storage.cached_objects.lock().await;
+            let mut cached_resources = self.storage.cached_resources.lock().await;
 
             let cell =
-                cached_objects.get_or_insert_mut_ref(&cache_key, || Arc::new(OnceCell::new()));
+                cached_resources.get_or_insert_mut_ref(&cache_key, || Arc::new(OnceCell::new()));
             if cell.get().is_some_and(|resource| resource.is_expired(now)) {
                 *cell = Arc::new(OnceCell::new());
             }
@@ -180,7 +180,7 @@ where
         };
         let result = cell
             .get_or_try_init(async || {
-                let object = match self.upstream.get(path).await {
+                let resource = match self.upstream.get(path).await {
                     Ok(Some(content)) => content,
                     Ok(None) => {
                         return Err(None);
@@ -189,17 +189,17 @@ where
                         return Err(Some(err));
                     }
                 };
-                let content = object
+                let body = resource
                     .body
                     .into_data_stream()
                     .map_err(std::io::Error::other);
-                let content = tokio_util::io::StreamReader::new(content);
+                let body = tokio_util::io::StreamReader::new(body);
                 let file = create_cached_resource(
                     init_id,
                     new_resource_expires_after,
                     self,
-                    object.headers,
-                    content,
+                    resource.headers,
+                    body,
                 )
                 .await;
                 let file = match file {
@@ -212,20 +212,20 @@ where
             })
             .await;
 
-        let cache_file = match result {
-            Ok(cache_file) => {
-                if cache_file.id == init_id {
+        let cached_resource = match result {
+            Ok(cached_resource) => {
+                if cached_resource.id == init_id {
                     // File ID matches the ID we just generated, so this was
                     // a cache miss that we've now filled in
                     self.cache_miss_count.increment(1);
-                    self.cache_miss_bytes.increment(cache_file.size);
+                    self.cache_miss_bytes.increment(cached_resource.size);
                 } else {
                     // File ID does not match our ID, so the file was already
                     // populated meaning this was a cache hit
                     self.cache_hit_count.increment(1);
-                    self.cache_hit_bytes.increment(cache_file.size);
+                    self.cache_hit_bytes.increment(cached_resource.size);
                 }
-                cache_file.clone()
+                cached_resource.clone()
             }
             Err(err) => {
                 match err {
@@ -240,12 +240,12 @@ where
                 };
             }
         };
-        let body = body_from_cached_resource(&cache_file).await?;
-        let object = UpstreamResource {
+        let body = body_from_cached_resource(&cached_resource).await?;
+        let resource = UpstreamResource {
             body,
-            headers: cache_file.headers.clone(),
+            headers: cached_resource.headers.clone(),
         };
-        Ok(Some(object))
+        Ok(Some(resource))
     }
 }
 
@@ -381,7 +381,7 @@ async fn create_cached_resource<S>(
     let size = tokio::io::copy(&mut body, &mut file).await?;
 
     let reservation = {
-        let mut cached_objects_lock = None;
+        let mut cached_resources_lock = None;
         loop {
             // Try and reserve enough space from the pool for the file
             let reservation = cache.storage.capacity_pool.reserve(size);
@@ -392,12 +392,12 @@ async fn create_cached_resource<S>(
 
             // We couldn't reserve enough space, so make some space by
             // clearing the cache
-            let cached_objects = match cached_objects_lock.as_mut() {
-                None => cached_objects_lock.insert(cache.storage.cached_objects.lock().await),
-                Some(cached_objects) => cached_objects,
+            let cached_resources = match cached_resources_lock.as_mut() {
+                None => cached_resources_lock.insert(cache.storage.cached_resources.lock().await),
+                Some(cached_resources) => cached_resources,
             };
 
-            let evicted = cached_objects.pop_lru();
+            let evicted = cached_resources.pop_lru();
             let Some((_evicted_key, evicted_file)) = evicted else {
                 // Cache is empty but there still wasn't enough space last
                 // we checked. Well, we already wrote the file, so reserve

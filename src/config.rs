@@ -212,7 +212,7 @@ pub struct StorageConfig {
     /// this size for several reasons, such as:
     ///
     /// - Not accounting for physical file size
-    /// - A single cached object exceeding the maximum disk capacity
+    /// - A single cached resource exceeding the maximum disk capacity
     #[serde(default = "default_max_disk_capacity")]
     pub max_disk_capacity: bytesize::ByteSize,
 
@@ -221,7 +221,7 @@ pub struct StorageConfig {
     #[serde(default = "default_min_cache_files")]
     pub min_cache_files: u64,
 
-    /// Maximum number of file descriptors that should be used to cache objects.
+    /// Maximum number of file descriptors that should be used to cache resources.
     ///
     /// When not set, the maximum number of cache files is set based on the
     /// process's `NOFILE` rlimit, but it reserves enough space for

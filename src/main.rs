@@ -97,16 +97,9 @@ async fn main() -> anyhow::Result<()> {
         .layer(
             tower::ServiceBuilder::new().layer(
                 tower_http::trace::TraceLayer::new_for_http()
-                    .make_span_with(|req: &axum::http::Request<_>| {
-                        let path = if let Some(path) =
-                            req.extensions().get::<axum::extract::MatchedPath>()
-                        {
-                            path.as_str()
-                        } else {
-                            req.uri().path()
-                        };
+                    .make_span_with(|_req: &axum::http::Request<_>| {
                         let request_id = uuid::Uuid::new_v4();
-                        tracing::info_span!("request", path, %request_id)
+                        tracing::info_span!("request", %request_id)
                     })
                     .on_request(|_req: &axum::http::Request<_>, _span: &tracing::Span| {
                         tracing::debug!("started request");

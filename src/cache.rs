@@ -146,6 +146,7 @@ where
             || &self.default_route_metrics,
             |pattern| &self.route_metrics[pattern],
         );
+        route_metrics.request_count.increment(1);
 
         let cache_key = CachedResourceKey {
             host: self.host_key.clone(),
@@ -297,6 +298,7 @@ impl CacheRoutes {
 
 #[derive(Debug, Clone)]
 struct CacheRouteMetrics {
+    request_count: metrics::Counter,
     miss_count: metrics::Counter,
     miss_bytes: metrics::Counter,
     hit_count: metrics::Counter,
@@ -310,6 +312,7 @@ struct CacheRouteMetrics {
 impl CacheRouteMetrics {
     fn new(host_key: Arc<str>, path_pattern: Arc<str>) -> Self {
         Self {
+            request_count: metrics::counter!("cache_request_count", "host" => host_key.clone(), "path" => path_pattern.clone()),
             miss_count: metrics::counter!("cache_miss_count", "host" => host_key.clone(), "path" => path_pattern.clone()),
             miss_bytes: metrics::counter!("cache_miss_bytes", "host" => host_key.clone(), "path" => path_pattern.clone()),
             hit_count: metrics::counter!("cache_hit_count", "host" => host_key.clone(), "path" => path_pattern.clone()),

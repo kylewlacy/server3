@@ -434,7 +434,7 @@ async fn create_cached_resource<S>(
             };
 
             let evicted = cached_resources.pop_lru();
-            let Some((_evicted_key, evicted_file)) = evicted else {
+            let Some((_evicted_key, evicted_resource)) = evicted else {
                 // Cache is empty but there still wasn't enough space last
                 // we checked. Well, we already wrote the file, so reserve
                 // as much space as we can from the pool and continue onward
@@ -452,14 +452,14 @@ async fn create_cached_resource<S>(
                 break reservation;
             };
 
-            if let Some(evicted_file) = evicted_file.get() {
+            if let Some(evicted_resource) = evicted_resource.get() {
                 // Update the counters for the file we just evicted rather
                 // than the current store's counters. That way, we update the
                 // metrics with the proper host key
-                evicted_file.cache_eviction_count.increment(1);
-                evicted_file
+                evicted_resource.cache_eviction_count.increment(1);
+                evicted_resource
                     .cache_eviction_bytes
-                    .increment(evicted_file.size);
+                    .increment(evicted_resource.size);
             }
 
             // We just evicted something from the cache, so we're ready to

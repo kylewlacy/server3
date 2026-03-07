@@ -320,8 +320,8 @@ impl CacheRouteMetrics {
             hit_bytes: metrics::counter!("server3_cache_hit_bytes", "host" => host_key.clone(), "path" => path_pattern.clone()),
             never_count: metrics::counter!("server3_cache_never_count", "host" => host_key.clone(), "path" => path_pattern.clone()),
             error_count: metrics::counter!("server3_cache_error_count", "host" => host_key.clone(), "path" => path_pattern.clone()),
-            not_found_count: metrics::counter!("server3_cache_error_count", "host" => host_key.clone(), "path" => path_pattern.clone()),
-            unrouted_count: metrics::counter!("server3_cache_error_count", "host" => host_key.clone(), "path" => path_pattern.clone()),
+            not_found_count: metrics::counter!("server3_cache_not_found_count", "host" => host_key.clone(), "path" => path_pattern.clone()),
+            unrouted_count: metrics::counter!("server3_cache_unrouted_count", "host" => host_key.clone(), "path" => path_pattern.clone()),
         }
     }
 }

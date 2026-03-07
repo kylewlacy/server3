@@ -92,8 +92,10 @@ pub struct Cache<S> {
     cache_miss_bytes: metrics::Counter,
     cache_hit_count: metrics::Counter,
     cache_hit_bytes: metrics::Counter,
+    cache_never_count: metrics::Counter,
     cache_error_count: metrics::Counter,
     cache_not_found_count: metrics::Counter,
+    cache_unrouted_count: metrics::Counter,
     cache_eviction_count: metrics::Counter,
     cache_eviction_bytes: metrics::Counter,
     cache_disk_file_count: metrics::Gauge,
@@ -115,8 +117,10 @@ impl<S> Cache<S> {
             cache_miss_bytes: metrics::counter!("cache_miss_bytes", "host" => host_key.clone()),
             cache_hit_count: metrics::counter!("cache_hit_count", "host" => host_key.clone()),
             cache_hit_bytes: metrics::counter!("cache_hit_bytes", "host" => host_key.clone()),
+            cache_never_count: metrics::counter!("cache_never_count", "host" => host_key.clone()),
             cache_error_count: metrics::counter!("cache_error_count", "host" => host_key.clone()),
             cache_not_found_count: metrics::counter!("cache_not_found_count", "host" => host_key.clone()),
+            cache_unrouted_count: metrics::counter!("cached_unrouted_count", "host" => host_key.clone()),
             cache_eviction_count: metrics::counter!("cache_eviction_count", "host" => host_key.clone()),
             cache_eviction_bytes: metrics::counter!("cache_eviction_bytes", "host" => host_key.clone()),
             cache_disk_file_count: metrics::gauge!("cache_disk_file_count", "host" => host_key.clone()),
@@ -152,7 +156,7 @@ where
         let max_age = match rule {
             CacheRouteRule::Enabled(CacheEnabledRouteRule { max_age }) => max_age,
             CacheRouteRule::Disabled => {
-                // TODO: Track metric for this case
+                self.cache_unrouted_count.increment(1);
                 return Ok(None);
             }
         };
@@ -160,9 +164,7 @@ where
             CacheMaxAgeRule::CacheForever => None,
             CacheMaxAgeRule::CacheFor(duration) => Some(now.checked_add(*duration).unwrap()),
             CacheMaxAgeRule::CacheNever => {
-                // TODO: Track metric for this case
-                // TODO: Return metadata as a header (hit/miss/not_found/unrouted/uncached)?
-                // TODO: use same metric name with different labels for each type?
+                self.cache_never_count.increment(1);
                 return self.upstream.get(path).await;
             }
         };

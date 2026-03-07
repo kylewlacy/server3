@@ -1,6 +1,7 @@
 use std::sync::Arc;
 
 pub mod http;
+pub mod s3;
 
 #[async_trait::async_trait]
 pub trait Upstream {
@@ -47,6 +48,11 @@ pub enum UpstreamError {
 
     #[error(transparent)]
     Reqwest(#[from] reqwest::Error),
+
+    #[error(transparent)]
+    GetObject(
+        #[from] Box<aws_sdk_s3::error::SdkError<aws_sdk_s3::operation::get_object::GetObjectError>>,
+    ),
 
     #[error(transparent)]
     Io(#[from] std::io::Error),

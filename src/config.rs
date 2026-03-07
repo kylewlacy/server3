@@ -94,6 +94,21 @@ pub enum UpstreamConfig {
     /// - Only some response headers (e.g. `Content-Type`) are cached and
     ///   returned.
     Http(UpstreamHttpConfig),
+
+    /// Proxy requests by fetching objects from an S3 bucket.
+    ///
+    /// Only a few configuration options are provided here. Other options
+    /// can be set using the standard AWS SDK convention, such as environment
+    /// variables and the config file `~/.aws/config`. Most importantly,
+    /// authentication is handled purely through the SDK.
+    ///
+    /// Here are some extra environment variables that you may want to set
+    /// to customize the SDK behavior:
+    ///
+    /// - `$AWS_ACCESS_KEY_ID` / `$AWS_SECRET_KEY`
+    /// - `AWS_REQUEST_CHECKSUM_CALCULATION=WHEN_REQUIRED`
+    /// - `AWS_RESPONSE_CHECKSUM_CALCULATION=WHEN_REQUIRED`
+    S3(UpstreamS3Config),
 }
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
@@ -120,6 +135,29 @@ pub struct UpstreamHttpConfig {
     /// times out. Defaults to no timeout.
     #[serde(default, with = "humantime_serde::option")]
     pub http_connect_timeout: Option<std::time::Duration>,
+}
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct UpstreamS3Config {
+    /// The S3 bucket to get objects from.
+    pub bucket: String,
+
+    /// An optional object prefix. Appended verbatim to each requested key.
+    ///
+    /// This should probably end with a trailing `/` if you want to serve
+    /// a "directory" from S3!
+    #[serde(default)]
+    pub prefix: String,
+
+    /// Which AWS profile to use for making requests.
+    pub profile: Option<String>,
+
+    /// The name of the AWS region of the bucket.
+    pub region: Option<String>,
+
+    /// A custom endpoint URL to use for the bucket. This is useful for using
+    /// other S3-compatible object store providers.
+    pub endpoint_url: Option<url::Url>,
 }
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]

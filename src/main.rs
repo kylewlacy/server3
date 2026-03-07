@@ -4,7 +4,7 @@ use clap::Parser;
 use figment::providers::Format as _;
 use tracing_subscriber::{layer::SubscriberExt as _, util::SubscriberInitExt as _};
 
-use server3::upstream::{ArcUpstream, http::HttpUpstream};
+use server3::upstream::{ArcUpstream, http::HttpUpstream, s3::S3Upstream};
 
 #[derive(Debug, Clone, Parser)]
 enum Args {
@@ -42,8 +42,9 @@ async fn main() -> anyhow::Result<()> {
 
     let routes = server3::cache::CacheRoutes::from_config(&config.cache, &config.routes);
     let routes = Arc::new(routes);
+
     let upstream = if let Some(upstream) = config.upstream {
-        let upstream = build_upstream(upstream)?;
+        let upstream = build_upstream(upstream).await?;
         let upstream = server3::cache::Cache::new(
             cache_storage.clone(),
             "DEFAULT".into(),
@@ -54,32 +55,26 @@ async fn main() -> anyhow::Result<()> {
     } else {
         None
     };
-    let host_upstreams = config
-        .hosts
-        .into_iter()
-        .filter_map(|(host, host_config)| {
-            let host = Arc::<str>::from(host);
-            let host_cache = host_config.cache.as_ref().unwrap_or(&config.cache);
-            let host_routes = host_config.routes.as_ref().unwrap_or(&config.routes);
-            let routes = server3::cache::CacheRoutes::from_config(host_cache, host_routes);
 
-            let upstream = host_config.upstream?;
-            let upstream = build_upstream(upstream);
-            let upstream = match upstream {
-                Ok(upstream) => upstream,
-                Err(error) => {
-                    return Some(Err(error));
-                }
-            };
-            let upstream = server3::cache::Cache::new(
-                cache_storage.clone(),
-                host.clone(),
-                Arc::new(routes),
-                upstream,
-            );
-            Some(Ok((host, upstream)))
-        })
-        .collect::<anyhow::Result<HashMap<_, _>>>()?;
+    let mut host_upstreams = HashMap::new();
+    for (host, host_config) in config.hosts {
+        let host = Arc::<str>::from(host);
+        let host_cache = host_config.cache.as_ref().unwrap_or(&config.cache);
+        let host_routes = host_config.routes.as_ref().unwrap_or(&config.routes);
+        let routes = server3::cache::CacheRoutes::from_config(host_cache, host_routes);
+
+        let Some(upstream) = host_config.upstream else {
+            continue;
+        };
+        let upstream = build_upstream(upstream).await?;
+        let upstream = server3::cache::Cache::new(
+            cache_storage.clone(),
+            host.clone(),
+            Arc::new(routes),
+            upstream,
+        );
+        host_upstreams.insert(host, upstream);
+    }
     let host_upstreams = Arc::new(host_upstreams);
 
     anyhow::ensure!(
@@ -197,9 +192,10 @@ async fn request_metrics_middleware(
     response
 }
 
-fn build_upstream(config: server3::config::UpstreamConfig) -> anyhow::Result<ArcUpstream> {
-    let upstream = match config {
+async fn build_upstream(config: server3::config::UpstreamConfig) -> anyhow::Result<ArcUpstream> {
+    let upstream: ArcUpstream = match config {
         server3::config::UpstreamConfig::Http(config) => Arc::new(HttpUpstream::new(config)?),
+        server3::config::UpstreamConfig::S3(config) => Arc::new(S3Upstream::new(config).await?),
     };
     Ok(upstream)
 }

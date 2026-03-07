@@ -6,6 +6,8 @@ edition = "2024"
 [dependencies]
 anyhow = "1.0.100"
 async-trait = "0.1.89"
+aws-config = { version = "1.8.15", features = ["behavior-version-latest"] }
+aws-sdk-s3 = "1.125.0"
 axum = { version = "0.8.8", features = ["macros"] }
 bytes = "1.11.0"
 bytesize = { version = "2.3.1", features = ["serde"] }

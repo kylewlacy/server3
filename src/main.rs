@@ -40,7 +40,7 @@ async fn main() -> anyhow::Result<()> {
     let cache_storage = server3::cache::CacheStorage::new(config.storage)?;
     let cache_storage = Arc::new(cache_storage);
 
-    let routes = server3::cache::CacheRouteRules::from_config(&config.cache, &config.routes);
+    let routes = server3::cache::CacheRoutes::from_config(&config.cache, &config.routes);
     let routes = Arc::new(routes);
     let upstream = if let Some(upstream) = config.upstream {
         let upstream = build_upstream(upstream)?;
@@ -61,7 +61,7 @@ async fn main() -> anyhow::Result<()> {
             let host = Arc::<str>::from(host);
             let host_cache = host_config.cache.as_ref().unwrap_or(&config.cache);
             let host_routes = host_config.routes.as_ref().unwrap_or(&config.routes);
-            let routes = server3::cache::CacheRouteRules::from_config(host_cache, host_routes);
+            let routes = server3::cache::CacheRoutes::from_config(host_cache, host_routes);
 
             let upstream = host_config.upstream?;
             let upstream = build_upstream(upstream);

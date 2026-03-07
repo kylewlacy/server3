@@ -2,7 +2,7 @@ use std::{sync::Arc, time::Duration};
 
 use bstr::BStr;
 use server3::{
-    cache::{CacheEnabledRouteRule, CacheMaxAgeRule, CacheRouteRule, CacheRouteRules},
+    cache::{CacheEnabledRouteRule, CacheMaxAgeRule, CacheRouteRule, CacheRoutes},
     config::StorageConfig,
 };
 
@@ -554,7 +554,7 @@ async fn test_cache_max_age() {
     let upstream_store = mockito_http_store(&mock_server);
     let storage = server3::cache::CacheStorage::new(cache_config(&ctx)).unwrap();
 
-    let mut routes = CacheRouteRules::new(CacheRouteRule::Enabled(CacheEnabledRouteRule {
+    let mut routes = CacheRoutes::new(CacheRouteRule::Enabled(CacheEnabledRouteRule {
         max_age: CacheMaxAgeRule::CacheFor(Duration::from_secs(2)),
     }));
     routes.add_route(
@@ -920,7 +920,7 @@ async fn test_cache_match_path() {
     let upstream_store = mockito_http_store(&mock_server);
     let storage = server3::cache::CacheStorage::new(cache_config(&ctx)).unwrap();
 
-    let mut routes = CacheRouteRules::new(CacheRouteRule::Enabled(CacheEnabledRouteRule {
+    let mut routes = CacheRoutes::new(CacheRouteRule::Enabled(CacheEnabledRouteRule {
         max_age: CacheMaxAgeRule::CacheNever,
     }));
     routes.add_route("/a", CacheRouteRule::Disabled);
@@ -1074,7 +1074,7 @@ async fn test_cache_match_path_star() {
     let upstream_store = mockito_http_store(&mock_server);
     let storage = server3::cache::CacheStorage::new(cache_config(&ctx)).unwrap();
 
-    let mut routes = CacheRouteRules::new(CacheRouteRule::Enabled(CacheEnabledRouteRule {
+    let mut routes = CacheRoutes::new(CacheRouteRule::Enabled(CacheEnabledRouteRule {
         max_age: CacheMaxAgeRule::CacheNever,
     }));
     routes.add_route("/*", CacheRouteRule::Disabled);

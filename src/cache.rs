@@ -1,5 +1,5 @@
 use std::{
-    collections::HashMap,
+    collections::{HashMap, HashSet},
     os::unix::fs::FileExt as _,
     path::PathBuf,
     sync::{Arc, atomic::AtomicU64},
@@ -86,41 +86,41 @@ impl CacheStorage {
 pub struct Cache<S> {
     storage: Arc<CacheStorage>,
     host_key: Arc<str>,
-    rules: Arc<CacheRouteRules>,
+    rules: Arc<CacheRoutes>,
     upstream: S,
-    cache_miss_count: metrics::Counter,
-    cache_miss_bytes: metrics::Counter,
-    cache_hit_count: metrics::Counter,
-    cache_hit_bytes: metrics::Counter,
-    cache_never_count: metrics::Counter,
-    cache_error_count: metrics::Counter,
-    cache_not_found_count: metrics::Counter,
-    cache_unrouted_count: metrics::Counter,
     cache_eviction_count: metrics::Counter,
     cache_eviction_bytes: metrics::Counter,
     cache_disk_file_count: metrics::Gauge,
     cache_disk_bytes: metrics::Gauge,
+    route_metrics: HashMap<Arc<str>, CacheRouteMetrics>,
+    default_route_metrics: CacheRouteMetrics,
 }
 
 impl<S> Cache<S> {
     pub fn new(
         storage: Arc<CacheStorage>,
         host_key: Arc<str>,
-        rules: Arc<CacheRouteRules>,
+        rules: Arc<CacheRoutes>,
         upstream: S,
     ) -> Self {
+        let route_metrics = rules
+            .route_paths
+            .iter()
+            .map(|path| {
+                (
+                    path.clone(),
+                    CacheRouteMetrics::new(host_key.clone(), path.clone()),
+                )
+            })
+            .collect();
+        let default_route_metrics = CacheRouteMetrics::new(host_key.clone(), "DEFAULT".into());
+
         Self {
             storage,
             rules,
             upstream,
-            cache_miss_count: metrics::counter!("cache_miss_count", "host" => host_key.clone()),
-            cache_miss_bytes: metrics::counter!("cache_miss_bytes", "host" => host_key.clone()),
-            cache_hit_count: metrics::counter!("cache_hit_count", "host" => host_key.clone()),
-            cache_hit_bytes: metrics::counter!("cache_hit_bytes", "host" => host_key.clone()),
-            cache_never_count: metrics::counter!("cache_never_count", "host" => host_key.clone()),
-            cache_error_count: metrics::counter!("cache_error_count", "host" => host_key.clone()),
-            cache_not_found_count: metrics::counter!("cache_not_found_count", "host" => host_key.clone()),
-            cache_unrouted_count: metrics::counter!("cached_unrouted_count", "host" => host_key.clone()),
+            route_metrics,
+            default_route_metrics,
             cache_eviction_count: metrics::counter!("cache_eviction_count", "host" => host_key.clone()),
             cache_eviction_bytes: metrics::counter!("cache_eviction_bytes", "host" => host_key.clone()),
             cache_disk_file_count: metrics::gauge!("cache_disk_file_count", "host" => host_key.clone()),
@@ -139,12 +139,12 @@ where
         path: &str,
         now: std::time::Instant,
     ) -> Result<Option<UpstreamResource>, UpstreamError> {
-        let (rule, matched_path) = self.rules.match_route(path);
-        tracing::trace!(
-            ?path,
-            pattern = matched_path.map(|path| path.pattern()),
-            ?rule,
-            "looked up cache rule for route"
+        let (rule, pattern) = self.rules.match_route(path);
+        tracing::trace!(?path, pattern, ?rule, "looked up cache rule for route");
+
+        let route_metrics = pattern.map_or_else(
+            || &self.default_route_metrics,
+            |pattern| &self.route_metrics[pattern],
         );
 
         let cache_key = CachedResourceKey {
@@ -156,7 +156,7 @@ where
         let max_age = match rule {
             CacheRouteRule::Enabled(CacheEnabledRouteRule { max_age }) => max_age,
             CacheRouteRule::Disabled => {
-                self.cache_unrouted_count.increment(1);
+                route_metrics.unrouted_count.increment(1);
                 return Ok(None);
             }
         };
@@ -164,7 +164,7 @@ where
             CacheMaxAgeRule::CacheForever => None,
             CacheMaxAgeRule::CacheFor(duration) => Some(now.checked_add(*duration).unwrap()),
             CacheMaxAgeRule::CacheNever => {
-                self.cache_never_count.increment(1);
+                route_metrics.never_count.increment(1);
                 return self.upstream.get(path).await;
             }
         };
@@ -219,24 +219,24 @@ where
                 if cached_resource.id == init_id {
                     // File ID matches the ID we just generated, so this was
                     // a cache miss that we've now filled in
-                    self.cache_miss_count.increment(1);
-                    self.cache_miss_bytes.increment(cached_resource.size);
+                    route_metrics.miss_count.increment(1);
+                    route_metrics.miss_bytes.increment(cached_resource.size);
                 } else {
                     // File ID does not match our ID, so the file was already
                     // populated meaning this was a cache hit
-                    self.cache_hit_count.increment(1);
-                    self.cache_hit_bytes.increment(cached_resource.size);
+                    route_metrics.hit_count.increment(1);
+                    route_metrics.hit_bytes.increment(cached_resource.size);
                 }
                 cached_resource.clone()
             }
             Err(err) => {
                 match err {
                     Some(err) => {
-                        self.cache_error_count.increment(1);
+                        route_metrics.error_count.increment(1);
                         return Err(err);
                     }
                     None => {
-                        self.cache_not_found_count.increment(1);
+                        route_metrics.not_found_count.increment(1);
                         return Ok(None);
                     }
                 };
@@ -252,12 +252,13 @@ where
 }
 
 #[derive(Debug)]
-pub struct CacheRouteRules {
-    default: CacheRouteRule,
-    routes: path_tree::PathTree<CacheRouteRule>,
+pub struct CacheRoutes {
+    default_rule: CacheRouteRule,
+    route_rules: path_tree::PathTree<(CacheRouteRule, Arc<str>)>,
+    route_paths: HashSet<Arc<str>>,
 }
 
-impl CacheRouteRules {
+impl CacheRoutes {
     pub fn from_config(
         cache_config: &crate::config::CacheConfig,
         routes_config: &HashMap<String, crate::config::RouteConfig>,
@@ -269,25 +270,54 @@ impl CacheRouteRules {
         routes
     }
 
-    pub fn new(default: CacheRouteRule) -> Self {
+    pub fn new(default_rule: CacheRouteRule) -> Self {
         Self {
-            default,
-            routes: path_tree::PathTree::new(),
+            default_rule,
+            route_rules: path_tree::PathTree::new(),
+            route_paths: HashSet::new(),
         }
     }
 
-    pub fn add_route(&mut self, path: &str, rule: CacheRouteRule) {
-        let _ = self.routes.insert(path, rule);
+    pub fn add_route(&mut self, path_pattern: &str, rule: CacheRouteRule) {
+        let path_pattern = Arc::<str>::from(path_pattern);
+        let _ = self
+            .route_rules
+            .insert(&path_pattern, (rule, path_pattern.clone()));
+        self.route_paths.insert(path_pattern);
     }
 
-    fn match_route<'a, 'b>(
-        &'a self,
-        path: &'b str,
-    ) -> (&'a CacheRouteRule, Option<path_tree::Path<'a, 'b>>) {
-        if let Some((rule, path)) = self.routes.find(path) {
-            (rule, Some(path))
+    fn match_route(&self, path: &str) -> (&CacheRouteRule, Option<&str>) {
+        if let Some(((rule, pattern), _)) = self.route_rules.find(path) {
+            (rule, Some(pattern))
         } else {
-            (&self.default, None)
+            (&self.default_rule, None)
+        }
+    }
+}
+
+#[derive(Debug, Clone)]
+struct CacheRouteMetrics {
+    miss_count: metrics::Counter,
+    miss_bytes: metrics::Counter,
+    hit_count: metrics::Counter,
+    hit_bytes: metrics::Counter,
+    never_count: metrics::Counter,
+    error_count: metrics::Counter,
+    not_found_count: metrics::Counter,
+    unrouted_count: metrics::Counter,
+}
+
+impl CacheRouteMetrics {
+    fn new(host_key: Arc<str>, path_pattern: Arc<str>) -> Self {
+        Self {
+            miss_count: metrics::counter!("cache_miss_count", "host" => host_key.clone(), "path" => path_pattern.clone()),
+            miss_bytes: metrics::counter!("cache_miss_bytes", "host" => host_key.clone(), "path" => path_pattern.clone()),
+            hit_count: metrics::counter!("cache_hit_count", "host" => host_key.clone(), "path" => path_pattern.clone()),
+            hit_bytes: metrics::counter!("cache_hit_bytes", "host" => host_key.clone(), "path" => path_pattern.clone()),
+            never_count: metrics::counter!("cache_never_count", "host" => host_key.clone(), "path" => path_pattern.clone()),
+            error_count: metrics::counter!("cache_error_count", "host" => host_key.clone(), "path" => path_pattern.clone()),
+            not_found_count: metrics::counter!("cache_error_count", "host" => host_key.clone(), "path" => path_pattern.clone()),
+            unrouted_count: metrics::counter!("cache_error_count", "host" => host_key.clone(), "path" => path_pattern.clone()),
         }
     }
 }

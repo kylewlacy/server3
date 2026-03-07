@@ -184,15 +184,10 @@ async fn request_metrics_middleware(
     let start = std::time::Instant::now();
 
     let method = req.method().to_string();
-    let path = req
-        .extensions()
-        .get::<axum::extract::MatchedPath>()
-        .map_or_else(|| req.uri().path(), |path| path.as_str())
-        .to_owned();
     let response = next.run(req).await;
 
     let status = response.status().as_u16().to_string();
-    let labels = [("method", method), ("path", path), ("status", status)];
+    let labels = [("method", method), ("status", status)];
 
     let duration = start.elapsed();
 

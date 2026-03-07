@@ -1,1 +1,61 @@
+// Most configuration fields are optional. The only required configuration
+// is `upstream` (or `hosts.*.upstream`)
+
+// The main server listen address
 bind_address "0.0.0.0:3000"
+
+// The listen address for serving metrics (under `/metrics`)
+bind_metrics_address "0.0.0.0:3001"
+
+// The upstream server to proxy requests to
+upstream {
+    type http
+    url https://cache.brioche.dev/
+}
+// upstream { type s3, bucket brioche-cache }
+
+// Limits and controls for storing temporary cache files
+storage {
+    dir /tmp
+
+    // Maximum disk space to use for caching
+    max_disk_capacity 1GiB
+
+    // Minimum number of file descriptors to reserve for cache files
+    min_cache_files 500
+
+    // Minimum number of file descriptors to reserve for things other than
+    // caching, like handling incoming requests!
+    min_non_cache_files 500
+}
+
+// Controls default caching rules
+cache {
+    max_age forever
+}
+
+// Controls different settings by request path
+routes {
+    // Use "disabled" to return a 404 without checking upstream
+    // /ignore-me disabled
+
+    // Set the max age to "never" to proxy the request without caching
+    // /cant-cache-this { max_age never }
+
+    // Set an explicit max age
+    // /just-a-minute { max_age 60 }
+    // /a-whole-day { max_age 24h }
+
+    // Disable all routes by default
+    // /* disabled
+}
+
+// Virtual hosting: proxy to different upstream servers or with
+// different caching rules, based on a request's `Host` header
+hosts {
+    example.com {
+        // upstream { }
+        // routes { }
+        // cache { }
+    }
+}

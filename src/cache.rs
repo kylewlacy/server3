@@ -71,8 +71,9 @@ impl CacheStorage {
             "creating cache storage",
         );
 
-        metrics::gauge!("cache_disk_max_bytes").set(config.max_disk_capacity.as_u64() as f64);
-        metrics::gauge!("cache_disk_max_file_count").set(max_cache_files as f64);
+        metrics::gauge!("server3_cache_disk_max_bytes")
+            .set(config.max_disk_capacity.as_u64() as f64);
+        metrics::gauge!("server3_cache_disk_max_file_count").set(max_cache_files as f64);
 
         Ok(Self {
             capacity_pool: CacheCapacityPool::new(config.max_disk_capacity.as_u64()),
@@ -121,10 +122,10 @@ impl<S> Cache<S> {
             upstream,
             route_metrics,
             default_route_metrics,
-            cache_eviction_count: metrics::counter!("cache_eviction_count", "host" => host_key.clone()),
-            cache_eviction_bytes: metrics::counter!("cache_eviction_bytes", "host" => host_key.clone()),
-            cache_disk_file_count: metrics::gauge!("cache_disk_file_count", "host" => host_key.clone()),
-            cache_disk_bytes: metrics::gauge!("cache_disk_bytes", "host" => host_key.clone()),
+            cache_eviction_count: metrics::counter!("server3_cache_eviction_count", "host" => host_key.clone()),
+            cache_eviction_bytes: metrics::counter!("server3_cache_eviction_bytes", "host" => host_key.clone()),
+            cache_disk_file_count: metrics::gauge!("server3_cache_disk_file_count", "host" => host_key.clone()),
+            cache_disk_bytes: metrics::gauge!("server3_cache_disk_bytes", "host" => host_key.clone()),
             host_key,
         }
     }
@@ -312,15 +313,15 @@ struct CacheRouteMetrics {
 impl CacheRouteMetrics {
     fn new(host_key: Arc<str>, path_pattern: Arc<str>) -> Self {
         Self {
-            request_count: metrics::counter!("cache_request_count", "host" => host_key.clone(), "path" => path_pattern.clone()),
-            miss_count: metrics::counter!("cache_miss_count", "host" => host_key.clone(), "path" => path_pattern.clone()),
-            miss_bytes: metrics::counter!("cache_miss_bytes", "host" => host_key.clone(), "path" => path_pattern.clone()),
-            hit_count: metrics::counter!("cache_hit_count", "host" => host_key.clone(), "path" => path_pattern.clone()),
-            hit_bytes: metrics::counter!("cache_hit_bytes", "host" => host_key.clone(), "path" => path_pattern.clone()),
-            never_count: metrics::counter!("cache_never_count", "host" => host_key.clone(), "path" => path_pattern.clone()),
-            error_count: metrics::counter!("cache_error_count", "host" => host_key.clone(), "path" => path_pattern.clone()),
-            not_found_count: metrics::counter!("cache_error_count", "host" => host_key.clone(), "path" => path_pattern.clone()),
-            unrouted_count: metrics::counter!("cache_error_count", "host" => host_key.clone(), "path" => path_pattern.clone()),
+            request_count: metrics::counter!("server3_cache_request_count", "host" => host_key.clone(), "path" => path_pattern.clone()),
+            miss_count: metrics::counter!("server3_cache_miss_count", "host" => host_key.clone(), "path" => path_pattern.clone()),
+            miss_bytes: metrics::counter!("server3_cache_miss_bytes", "host" => host_key.clone(), "path" => path_pattern.clone()),
+            hit_count: metrics::counter!("server3_cache_hit_count", "host" => host_key.clone(), "path" => path_pattern.clone()),
+            hit_bytes: metrics::counter!("server3_cache_hit_bytes", "host" => host_key.clone(), "path" => path_pattern.clone()),
+            never_count: metrics::counter!("server3_cache_never_count", "host" => host_key.clone(), "path" => path_pattern.clone()),
+            error_count: metrics::counter!("server3_cache_error_count", "host" => host_key.clone(), "path" => path_pattern.clone()),
+            not_found_count: metrics::counter!("server3_cache_error_count", "host" => host_key.clone(), "path" => path_pattern.clone()),
+            unrouted_count: metrics::counter!("server3_cache_error_count", "host" => host_key.clone(), "path" => path_pattern.clone()),
         }
     }
 }

@@ -1,5 +1,6 @@
 use std::{collections::HashMap, path::PathBuf, sync::Arc};
 
+use anyhow::Context as _;
 use axum::extract::State;
 use clap::Parser;
 use figment::providers::Format as _;
@@ -146,6 +147,7 @@ async fn main() -> anyhow::Result<()> {
         axum::serve(listener, metrics_app).await?;
         anyhow::Ok(())
     };
+    let shutdown_signal = shutdown_signal();
 
     tokio::select! {
         () = prometheus_upkeep_fut => {},
@@ -155,9 +157,41 @@ async fn main() -> anyhow::Result<()> {
         result = app_metrics_server_fut => {
             result?;
         }
+        result = shutdown_signal => {
+            result??;
+            tracing::info!("shutting down");
+        }
     };
 
     Ok(())
+}
+
+fn shutdown_signal() -> tokio::sync::oneshot::Receiver<anyhow::Result<()>> {
+    let (tx, rx) = tokio::sync::oneshot::channel::<anyhow::Result<()>>();
+
+    tokio::task::spawn(async move {
+        let mut ctrl_c = std::pin::pin!(tokio::signal::ctrl_c());
+
+        let sigterm = tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate());
+        let mut sigterm = match sigterm {
+            Ok(sigterm) => sigterm,
+            Err(error) => {
+                let _ = tx.send(Err(error).context("failed to install SIGTERM handler"));
+                return;
+            }
+        };
+
+        tokio::select! {
+            result = &mut ctrl_c => {
+                let _ = tx.send(result.context("Ctrl-C handler failed"));
+            }
+            Some(()) = sigterm.recv() => {
+                let _ = tx.send(Ok(()));
+            }
+        }
+    });
+
+    rx
 }
 
 fn install_prometheus_recorder() -> anyhow::Result<metrics_exporter_prometheus::PrometheusHandle> {

@@ -144,7 +144,7 @@ where
         &self,
         path: &str,
         now: std::time::Instant,
-    ) -> Result<Option<UpstreamResource>, UpstreamError> {
+    ) -> Result<Option<CachedResourceResponse>, UpstreamError> {
         let (rule, pattern) = self.rules.match_route(path);
         tracing::trace!(?path, pattern, ?rule, "looked up cache rule for route");
 
@@ -172,7 +172,12 @@ where
             CacheMaxAgeRule::CacheFor(duration) => Some(now.checked_add(*duration).unwrap()),
             CacheMaxAgeRule::CacheNever => {
                 route_metrics.never_count.increment(1);
-                return self.upstream.get(path).await;
+                let resource = self.upstream.get(path).await?;
+                return Ok(resource.map(|resource| CachedResourceResponse {
+                    resource,
+                    outcome: CacheOutcome::Never,
+                    expires_at: None,
+                }));
             }
         };
 
@@ -254,7 +259,38 @@ where
             body,
             headers: cached_resource.headers.clone(),
         };
-        Ok(Some(resource))
+        Ok(Some(CachedResourceResponse {
+            resource,
+            outcome: if init_id == cached_resource.id {
+                CacheOutcome::Miss
+            } else {
+                CacheOutcome::Hit
+            },
+            expires_at: cached_resource.expires_at,
+        }))
+    }
+}
+
+pub struct CachedResourceResponse {
+    pub resource: UpstreamResource,
+    pub outcome: CacheOutcome,
+    pub expires_at: Option<std::time::Instant>,
+}
+
+#[derive(Debug, Clone, Copy)]
+pub enum CacheOutcome {
+    Hit,
+    Miss,
+    Never,
+}
+
+impl CacheOutcome {
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            Self::Hit => "hit",
+            Self::Miss => "miss",
+            Self::Never => "never",
+        }
     }
 }
 

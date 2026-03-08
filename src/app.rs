@@ -4,7 +4,7 @@ use axum::{Json, extract::State};
 use reqwest::StatusCode;
 
 use crate::{
-    cache::Cache,
+    cache::{Cache, CachedResourceResponse},
     upstream::{ArcUpstream, Upstream, UpstreamResource},
 };
 
@@ -74,6 +74,12 @@ async fn get_resource(
         .ok_or_else(|| ResourceNotFound {
             path: uri.path().to_string(),
         })?;
+    let CachedResourceResponse {
+        resource,
+        outcome: _,
+        expires_at: _,
+    } = resource;
+
     Ok(resource)
 }
 

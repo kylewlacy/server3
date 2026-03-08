@@ -1,26 +1,29 @@
 use std::sync::Arc;
 
 use server3::{
-    cache::{CacheEnabledRouteRule, CacheMaxAgeRule, CacheRouteRule, CacheRoutes},
+    cache::{
+        CacheEnabledRouteRule, CacheMaxAgeRule, CacheRouteRule, CacheRoutes, CachedResourceResponse,
+    },
     config::{StorageConfig, UpstreamHttpConfig},
-    upstream::{UpstreamResource, http::HttpUpstream},
+    upstream::http::HttpUpstream,
 };
 use tracing_subscriber::{layer::SubscriberExt as _, util::SubscriberInitExt as _};
 
-pub async fn resource_to_bytes(resource: UpstreamResource) -> bstr::BString {
-    let bytes = axum::body::to_bytes(resource.body, 10_000_000)
+pub async fn resource_to_bytes(resource: CachedResourceResponse) -> bstr::BString {
+    let bytes = axum::body::to_bytes(resource.resource.body, 10_000_000)
         .await
         .unwrap();
     bytes.to_vec().into()
 }
 
-pub async fn resource_to_string(resource: UpstreamResource) -> String {
+pub async fn resource_to_string(resource: CachedResourceResponse) -> String {
     let bytes = resource_to_bytes(resource).await;
     String::from_utf8(bytes.into()).unwrap()
 }
 
-pub fn resource_content_type(resource: &UpstreamResource) -> Option<&bstr::BStr> {
+pub fn resource_content_type(resource: &CachedResourceResponse) -> Option<&bstr::BStr> {
     resource
+        .resource
         .headers
         .content_type
         .as_ref()

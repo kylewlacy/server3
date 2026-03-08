@@ -114,7 +114,7 @@ impl<S> Cache<S> {
                 )
             })
             .collect();
-        let default_route_metrics = CacheRouteMetrics::new(host_key.clone(), "DEFAULT".into());
+        let default_route_metrics = CacheRouteMetrics::new(host_key.clone(), "**".into());
 
         Self {
             storage,

@@ -49,7 +49,7 @@ async fn main() -> anyhow::Result<()> {
         let upstream = build_upstream(upstream).await?;
         let upstream = server3::cache::Cache::new(
             cache_storage.clone(),
-            "DEFAULT".into(),
+            "**".into(),
             routes.clone(),
             upstream,
         );
@@ -221,8 +221,8 @@ async fn request_metrics_middleware(
 
     let host = server3::app::host(req.headers()).ok().flatten();
     let (host, path) = state.filtered_host_and_path(host, req.uri().path());
-    let host = host.map(|host| &**host).unwrap_or("DEFAULT");
-    let path = path.unwrap_or("DEFAULT");
+    let host = host.map(|host| &**host).unwrap_or("**");
+    let path = path.unwrap_or("**");
     let method = req.method().to_string();
     let response = next.run(req).await;
 

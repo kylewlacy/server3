@@ -1,11 +1,11 @@
 use std::{collections::HashMap, sync::Arc};
 
-use axum::{Json, extract::State};
+use axum::{Json, extract::State, http::HeaderValue, response::IntoResponse as _};
 use reqwest::StatusCode;
 
 use crate::{
     cache::{Cache, CachedResourceResponse},
-    upstream::{ArcUpstream, Upstream, UpstreamResource},
+    upstream::{ArcUpstream, Upstream},
 };
 
 pub fn router(state: AppState) -> axum::Router {
@@ -18,6 +18,7 @@ pub fn router(state: AppState) -> axum::Router {
 pub struct AppState {
     pub upstream: Option<Cache<ArcUpstream>>,
     pub host_upstreams: Arc<HashMap<Arc<str>, Cache<ArcUpstream>>>,
+    pub metadata: Arc<crate::config::MetadataConfig>,
 }
 
 impl AppState {
@@ -53,7 +54,7 @@ async fn get_resource(
     State(state): State<AppState>,
     uri: axum::http::Uri,
     headers: axum::http::HeaderMap,
-) -> Result<UpstreamResource, AppError> {
+) -> Result<axum::response::Response, AppError> {
     let host_value = host(&headers)?;
     let hostname = host_value.map(|host_value| {
         if let Some((host, _port)) = host_value.rsplit_once(':') {
@@ -76,11 +77,33 @@ async fn get_resource(
         })?;
     let CachedResourceResponse {
         resource,
-        outcome: _,
-        expires_at: _,
+        outcome,
+        expires_at,
     } = resource;
+    let mut response = resource.into_response();
 
-    Ok(resource)
+    let headers = response.headers_mut();
+    if state.metadata.cache_outcome {
+        headers.insert(
+            "server3-cache-outcome",
+            axum::http::HeaderValue::from_static(outcome.as_str()),
+        );
+    }
+    if state.metadata.expires_at {
+        let expires_at =
+            expires_at.and_then(|expires_at| HeaderValue::from_str(&expires_at.to_string()).ok());
+        if let Some(expires_at) = expires_at {
+            headers.insert("server3-expires-at", expires_at);
+        }
+    }
+    if let Some(node_name) = &state.metadata.node_name {
+        let node_name = HeaderValue::from_str(node_name);
+        if let Ok(node_name) = node_name {
+            headers.insert("server3-node-name", node_name);
+        }
+    }
+
+    Ok(response)
 }
 
 pub fn host(headers: &axum::http::HeaderMap) -> Result<Option<&str>, InvalidHostHeader> {

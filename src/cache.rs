@@ -266,7 +266,7 @@ where
             } else {
                 CacheOutcome::Hit
             },
-            expires_at: cached_resource.expires_at,
+            expires_at: cached_resource.expires_at_timestamp,
         }))
     }
 }
@@ -274,7 +274,7 @@ where
 pub struct CachedResourceResponse {
     pub resource: UpstreamResource,
     pub outcome: CacheOutcome,
-    pub expires_at: Option<std::time::Instant>,
+    pub expires_at: Option<jiff::Timestamp>,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -511,9 +511,21 @@ async fn create_cached_resource<S>(
     cache.cache_disk_file_count.increment(1);
     cache.cache_disk_bytes.increment(size as f64);
 
+    // Estimate the Unix timestamp that this cache entry will expire. The
+    // source of truth is still `expires_at`, but this is used for the
+    // `Server3-Expires-At` metadata header
+    let expires_at_timestamp = expires_at.and_then(|expires_at| {
+        // Estimate how far in the future the cache entry expires
+        let expires_after = expires_at.saturating_duration_since(std::time::Instant::now());
+
+        // ...then convert this to a timestamp by adding to the current time
+        jiff::Timestamp::now().checked_add(expires_after).ok()
+    });
+
     Ok(CachedResource {
         id,
         expires_at,
+        expires_at_timestamp,
         headers,
         file,
         size,
@@ -570,6 +582,7 @@ struct CachedResource {
     file: tokio::fs::File,
     size: u64,
     expires_at: Option<std::time::Instant>,
+    expires_at_timestamp: Option<jiff::Timestamp>,
     cache_eviction_count: metrics::Counter,
     cache_eviction_bytes: metrics::Counter,
     cache_disk_file_count: metrics::Gauge,

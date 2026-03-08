@@ -59,3 +59,16 @@ hosts {
         // cache { }
     }
 }
+
+metadata {
+    // Return the `Server3-Cache-Outcome` response header, which shows
+    // whether the response was a cache hit, miss, etc.
+    cache_outcome true
+
+    // Return the `Server3-Expires-At` response header, with the timestamp
+    // that the cache entry will expire (if any).
+    expires_at true
+
+    // Optionally set a node name for this machine
+    // node_name joshua
+}

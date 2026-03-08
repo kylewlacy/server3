@@ -86,6 +86,7 @@ async fn main() -> anyhow::Result<()> {
     let state = server3::app::AppState {
         upstream,
         host_upstreams,
+        metadata: Arc::new(config.metadata),
     };
 
     let app = server3::app::router(state.clone())

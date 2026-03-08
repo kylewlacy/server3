@@ -49,6 +49,11 @@ pub struct Config {
     /// Configuration for where cached data should be stored.
     #[serde(default)]
     pub storage: StorageConfig,
+
+    /// Control which metadata response headers to include, if any. By default,
+    /// the server doesn't include any extra metadata headers.
+    #[serde(default)]
+    pub metadata: MetadataConfig,
 }
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
@@ -287,6 +292,22 @@ impl Default for StorageConfig {
             min_non_cache_files: default_min_non_cache_files(),
         }
     }
+}
+
+#[derive(Debug, Default, Clone, serde::Serialize, serde::Deserialize)]
+pub struct MetadataConfig {
+    /// Enable the `Server3-Cache-Outcome` response header.
+    #[serde(default)]
+    pub cache_outcome: bool,
+
+    /// Enable the `Server3-Expires-At` response header.
+    #[serde(default)]
+    pub expires_at: bool,
+
+    /// Set a value for the `Server3-Node-Name` response header. This is
+    /// useful in a distributed environment, so each machine can respond
+    /// with a different node name.
+    pub node_name: Option<String>,
 }
 
 fn default_bind_address() -> String {

@@ -21,6 +21,25 @@ pub struct AppState {
 }
 
 impl AppState {
+    pub fn filtered_host_and_path(
+        &self,
+        host: Option<&str>,
+        path: &str,
+    ) -> (Option<&Arc<str>>, Option<&str>) {
+        if let Some(host) = host
+            && let Some((host, upstream)) = self.host_upstreams.get_key_value(host)
+        {
+            let path = upstream.get_path_pattern(path);
+            (Some(host), path)
+        } else {
+            let path = self
+                .upstream
+                .as_ref()
+                .and_then(|upstream| upstream.get_path_pattern(path));
+            (None, path)
+        }
+    }
+
     fn cache_for_host(
         &self,
         host: Option<&str>,
@@ -58,7 +77,7 @@ async fn get_resource(
     Ok(resource)
 }
 
-fn host(headers: &axum::http::HeaderMap) -> Result<Option<&str>, AppError> {
+pub fn host(headers: &axum::http::HeaderMap) -> Result<Option<&str>, InvalidHostHeader> {
     let mut host_values = headers.get_all("host").iter();
     let Some(host_value) = host_values.next() else {
         return Ok(None);
@@ -66,14 +85,16 @@ fn host(headers: &axum::http::HeaderMap) -> Result<Option<&str>, AppError> {
 
     if host_values.next().is_some() {
         // A duplicate 'Host' header is not allowed
-        return Err(AppError::InvalidHostHeader);
+        return Err(InvalidHostHeader);
     }
 
-    let host_value = host_value
-        .to_str()
-        .map_err(|_| AppError::InvalidHostHeader)?;
+    let host_value = host_value.to_str().map_err(|_| InvalidHostHeader)?;
     Ok(Some(host_value))
 }
+
+#[derive(Debug, thiserror::Error)]
+#[error("invalid 'Host' header value")]
+pub struct InvalidHostHeader;
 
 #[derive(Debug, thiserror::Error)]
 enum AppError {
@@ -86,8 +107,8 @@ enum AppError {
     #[error("no upstream server configured for this host")]
     NoUpstreamServer { hostname: Option<String> },
 
-    #[error("invalid 'Host' header value")]
-    InvalidHostHeader,
+    #[error(transparent)]
+    InvalidHostHeader(#[from] InvalidHostHeader),
 }
 
 impl axum::response::IntoResponse for AppError {
@@ -108,7 +129,9 @@ impl axum::response::IntoResponse for AppError {
                 tracing::info!(hostname, "host not configured");
                 (StatusCode::NOT_FOUND, self.to_string())
             }
-            Self::InvalidHostHeader => (StatusCode::BAD_REQUEST, self.to_string()),
+            Self::InvalidHostHeader(InvalidHostHeader) => {
+                (StatusCode::BAD_REQUEST, self.to_string())
+            }
         };
 
         (status, Json(JsonError { message })).into_response()

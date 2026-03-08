@@ -129,6 +129,11 @@ impl<S> Cache<S> {
             host_key,
         }
     }
+
+    pub(crate) fn get_path_pattern(&self, path: &str) -> Option<&str> {
+        let (_, pattern) = self.rules.match_route(path);
+        pattern
+    }
 }
 
 impl<S> Cache<S>

@@ -1,5 +1,6 @@
 use std::{collections::HashMap, path::PathBuf, sync::Arc};
 
+use axum::extract::State;
 use clap::Parser;
 use figment::providers::Format as _;
 use tracing_subscriber::{layer::SubscriberExt as _, util::SubscriberInitExt as _};
@@ -87,8 +88,11 @@ async fn main() -> anyhow::Result<()> {
         host_upstreams,
     };
 
-    let app = server3::app::router(state)
-        .layer(axum::middleware::from_fn(request_metrics_middleware))
+    let app = server3::app::router(state.clone())
+        .layer(axum::middleware::from_fn_with_state(
+            state,
+            request_metrics_middleware,
+        ))
         .layer(
             tower::ServiceBuilder::new().layer(
                 tower_http::trace::TraceLayer::new_for_http()
@@ -172,17 +176,28 @@ fn install_prometheus_recorder() -> anyhow::Result<metrics_exporter_prometheus::
     Ok(prometheus)
 }
 
+#[axum::debug_middleware]
 async fn request_metrics_middleware(
+    State(state): State<server3::app::AppState>,
     req: axum::extract::Request,
     next: axum::middleware::Next,
 ) -> impl axum::response::IntoResponse {
     let start = std::time::Instant::now();
 
+    let host = server3::app::host(req.headers()).ok().flatten();
+    let (host, path) = state.filtered_host_and_path(host, req.uri().path());
+    let host = host.map(|host| &**host).unwrap_or("DEFAULT");
+    let path = path.unwrap_or("DEFAULT");
     let method = req.method().to_string();
     let response = next.run(req).await;
 
     let status = response.status().as_u16().to_string();
-    let labels = [("method", method), ("status", status)];
+    let labels = [
+        ("host", host.to_string()),
+        ("path", path.to_string()),
+        ("method", method),
+        ("status", status),
+    ];
 
     let duration = start.elapsed();
 

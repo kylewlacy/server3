@@ -52,11 +52,11 @@ pub fn test_context() -> TestContext {
     }
 }
 
-pub fn mockito_http_store(mockito: &mockito::Server) -> HttpUpstream {
-    mockito_http_store_with_prefix(mockito, "")
+pub fn mockito_http_upstream(mockito: &mockito::Server) -> HttpUpstream {
+    mockito_http_upstream_with_prefix(mockito, "")
 }
 
-pub fn mockito_http_store_with_prefix(mockito: &mockito::Server, prefix: &str) -> HttpUpstream {
+pub fn mockito_http_upstream_with_prefix(mockito: &mockito::Server, prefix: &str) -> HttpUpstream {
     let base_url: url::Url = mockito.url().parse().unwrap();
     let url = if prefix.is_empty() {
         base_url

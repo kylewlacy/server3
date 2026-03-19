@@ -7,7 +7,7 @@ use server3::{
 };
 
 use server3_test_support::{
-    cache_config, cache_routes_forever, mockito_http_store, mockito_http_store_with_prefix,
+    cache_config, cache_routes_forever, mockito_http_upstream, mockito_http_upstream_with_prefix,
     resource_content_type, resource_to_bytes, resource_to_string, test_context,
 };
 
@@ -17,13 +17,13 @@ async fn test_cache_resource() {
     let now = std::time::Instant::now();
     let mut mock_server = mockito::Server::new_async().await;
 
-    let upstream_store = mockito_http_store(&mock_server);
+    let upstream = mockito_http_upstream(&mock_server);
     let storage = server3::cache::CacheStorage::new(cache_config(&ctx)).unwrap();
     let cache = server3::cache::Cache::new(
         Arc::new(storage),
         "host".into(),
         cache_routes_forever(),
-        upstream_store,
+        upstream,
     );
 
     // Put a resource in the upstream server
@@ -52,13 +52,13 @@ async fn test_cache_resource_subpath_handling() {
     let now = std::time::Instant::now();
     let mut mock_server = mockito::Server::new_async().await;
 
-    let upstream_store = mockito_http_store_with_prefix(&mock_server, "foo");
+    let upstream = mockito_http_upstream_with_prefix(&mock_server, "foo");
     let storage = server3::cache::CacheStorage::new(cache_config(&ctx)).unwrap();
     let cache = server3::cache::Cache::new(
         Arc::new(storage),
         "host".into(),
         cache_routes_forever(),
-        upstream_store,
+        upstream,
     );
 
     // Put some resources in the upstream server. The paths chosen ensure
@@ -101,16 +101,16 @@ async fn test_cache_resource_content_type() {
     let now = std::time::Instant::now();
     let mut mock_server = mockito::Server::new_async().await;
 
-    let upstream_store = mockito_http_store(&mock_server);
+    let upstream = mockito_http_upstream(&mock_server);
     let storage = server3::cache::CacheStorage::new(cache_config(&ctx)).unwrap();
     let cache = server3::cache::Cache::new(
         Arc::new(storage),
         "host".into(),
         cache_routes_forever(),
-        upstream_store,
+        upstream,
     );
 
-    // Put some resourcess in the upstream store with various
+    // Put some resourcess in the upstream with various
     // Content-Type values
     let bar_none_mock = mock_server
         .mock("GET", "/foo/bar")
@@ -226,7 +226,7 @@ async fn test_cache_max_resources() {
     let now = std::time::Instant::now();
     let mut mock_server = mockito::Server::new_async().await;
 
-    let upstream_store = mockito_http_store(&mock_server);
+    let upstream = mockito_http_upstream(&mock_server);
     let storage = server3::cache::CacheStorage::new(StorageConfig {
         max_cache_files: Some(3),
         ..cache_config(&ctx)
@@ -236,7 +236,7 @@ async fn test_cache_max_resources() {
         Arc::new(storage),
         "host".into(),
         cache_routes_forever(),
-        upstream_store,
+        upstream,
     );
 
     // Add 3 resources to the upstream cache
@@ -327,7 +327,7 @@ async fn test_cache_max_disk_capacity() {
     let now = std::time::Instant::now();
     let mut mock_server = mockito::Server::new_async().await;
 
-    let upstream_store = mockito_http_store(&mock_server);
+    let upstream = mockito_http_upstream(&mock_server);
     let storage = server3::cache::CacheStorage::new(StorageConfig {
         max_disk_capacity: bytesize::ByteSize::b(499),
         ..cache_config(&ctx)
@@ -337,7 +337,7 @@ async fn test_cache_max_disk_capacity() {
         Arc::new(storage),
         "host".into(),
         cache_routes_forever(),
-        upstream_store,
+        upstream,
     );
 
     let bytes_1x100 = vec![1u8; 100];
@@ -465,16 +465,16 @@ async fn test_cache_partition_by_host_key() {
     let storage = server3::cache::CacheStorage::new(cache_config(&ctx)).unwrap();
     let storage = Arc::new(storage);
 
-    let upstream_store_a = mockito_http_store_with_prefix(&mock_server, "a");
-    let upstream_store_b1 = mockito_http_store_with_prefix(&mock_server, "b1");
-    let upstream_store_b2 = mockito_http_store_with_prefix(&mock_server, "b2");
+    let upstream_a = mockito_http_upstream_with_prefix(&mock_server, "a");
+    let upstream_b1 = mockito_http_upstream_with_prefix(&mock_server, "b1");
+    let upstream_b2 = mockito_http_upstream_with_prefix(&mock_server, "b2");
 
     // `cache_a` has a unique host key
     let cache_a = server3::cache::Cache::new(
         storage.clone(),
         "host-a".into(),
         cache_routes_forever(),
-        upstream_store_a,
+        upstream_a,
     );
 
     // `cache_b1` and `cache_b2` share the same host key, and so overlap in the cache
@@ -482,13 +482,13 @@ async fn test_cache_partition_by_host_key() {
         storage.clone(),
         "host-b".into(),
         cache_routes_forever(),
-        upstream_store_b1,
+        upstream_b1,
     );
     let cache_b2 = server3::cache::Cache::new(
         storage.clone(),
         "host-b".into(),
         cache_routes_forever(),
-        upstream_store_b2,
+        upstream_b2,
     );
 
     // Put the same resource in the upstream for both a and b1
@@ -549,7 +549,7 @@ async fn test_cache_max_age() {
     let now = std::time::Instant::now();
     let mut mock_server = mockito::Server::new_async().await;
 
-    let upstream_store = mockito_http_store(&mock_server);
+    let upstream = mockito_http_upstream(&mock_server);
     let storage = server3::cache::CacheStorage::new(cache_config(&ctx)).unwrap();
 
     let mut routes = CacheRoutes::new(CacheRouteRule::Enabled(CacheEnabledRouteRule {
@@ -580,12 +580,8 @@ async fn test_cache_max_age() {
         }),
     );
 
-    let cache = server3::cache::Cache::new(
-        Arc::new(storage),
-        "host".into(),
-        Arc::new(routes),
-        upstream_store,
-    );
+    let cache =
+        server3::cache::Cache::new(Arc::new(storage), "host".into(), Arc::new(routes), upstream);
 
     {
         // "/cache-for-2s" should be cached for 2 seconds (the default
@@ -915,7 +911,7 @@ async fn test_cache_match_path() {
     let now = std::time::Instant::now();
     let mut mock_server = mockito::Server::new_async().await;
 
-    let upstream_store = mockito_http_store(&mock_server);
+    let upstream = mockito_http_upstream(&mock_server);
     let storage = server3::cache::CacheStorage::new(cache_config(&ctx)).unwrap();
 
     let mut routes = CacheRoutes::new(CacheRouteRule::Enabled(CacheEnabledRouteRule {
@@ -932,12 +928,8 @@ async fn test_cache_match_path() {
     routes.add_route("/b", CacheRouteRule::Disabled);
     routes.add_route("/c/*", CacheRouteRule::Disabled);
 
-    let cache = server3::cache::Cache::new(
-        Arc::new(storage),
-        "host".into(),
-        Arc::new(routes),
-        upstream_store,
-    );
+    let cache =
+        server3::cache::Cache::new(Arc::new(storage), "host".into(), Arc::new(routes), upstream);
 
     {
         // "/whatever" should be enabled (default rule)
@@ -1069,7 +1061,7 @@ async fn test_cache_match_path_star() {
     let now = std::time::Instant::now();
     let mock_server = mockito::Server::new_async().await;
 
-    let upstream_store = mockito_http_store(&mock_server);
+    let upstream = mockito_http_upstream(&mock_server);
     let storage = server3::cache::CacheStorage::new(cache_config(&ctx)).unwrap();
 
     let mut routes = CacheRoutes::new(CacheRouteRule::Enabled(CacheEnabledRouteRule {
@@ -1077,12 +1069,8 @@ async fn test_cache_match_path_star() {
     }));
     routes.add_route("/*", CacheRouteRule::Disabled);
 
-    let cache = server3::cache::Cache::new(
-        Arc::new(storage),
-        "host".into(),
-        Arc::new(routes),
-        upstream_store,
-    );
+    let cache =
+        server3::cache::Cache::new(Arc::new(storage), "host".into(), Arc::new(routes), upstream);
 
     // "/*" should match all paths, and so the rule should always take
     // precedent over the default rule

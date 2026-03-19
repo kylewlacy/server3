@@ -1,5 +1,6 @@
 use std::sync::Arc;
 
+pub mod fallthrough;
 pub mod http;
 pub mod s3;
 

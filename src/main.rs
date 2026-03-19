@@ -6,7 +6,10 @@ use clap::Parser;
 use figment::providers::Format as _;
 use tracing_subscriber::{layer::SubscriberExt as _, util::SubscriberInitExt as _};
 
-use server3::upstream::{ArcUpstream, http::HttpUpstream, s3::S3Upstream};
+use server3::{
+    config::UpstreamFallthroughConfig,
+    upstream::{ArcUpstream, fallthrough::FallthroughUpstream, http::HttpUpstream, s3::S3Upstream},
+};
 
 #[derive(Debug, Clone, Parser)]
 enum Args {
@@ -246,6 +249,11 @@ async fn build_upstream(config: server3::config::UpstreamConfig) -> anyhow::Resu
     let upstream: ArcUpstream = match config {
         server3::config::UpstreamConfig::Http(config) => Arc::new(HttpUpstream::new(config)?),
         server3::config::UpstreamConfig::S3(config) => Arc::new(S3Upstream::new(config).await?),
+        server3::config::UpstreamConfig::Fallthrough(UpstreamFallthroughConfig { upstreams }) => {
+            let upstreams = upstreams.into_iter().map(build_upstream);
+            let upstreams = futures::future::try_join_all(upstreams).await?;
+            Arc::new(FallthroughUpstream::new(upstreams))
+        }
     };
     Ok(upstream)
 }

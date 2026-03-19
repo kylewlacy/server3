@@ -43,6 +43,19 @@ impl Upstream for S3Upstream {
 
         let key = format!("{}{path}", self.prefix);
 
+        if key.is_empty() {
+            // The S3 API doesn't allow for an empty key, so return early
+            // instead of trying to make the request and failing with an error.
+            tracing::trace!(
+                bucket = self.bucket,
+                prefix = self.prefix,
+                key,
+                path,
+                "skipping S3 object: key is empty"
+            );
+            return Ok(None);
+        }
+
         tracing::trace!(bucket = self.bucket, key, "requesting S3 object");
 
         let response = self

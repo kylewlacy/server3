@@ -144,10 +144,10 @@ impl axum::response::IntoResponse for AppError {
     fn into_response(self) -> axum::response::Response {
         let (status, message) = match self {
             Self::Upstream(error) => {
-                tracing::warn!("store error: {error:?}");
+                tracing::warn!("upstream error: {error:?}");
                 (
                     StatusCode::INTERNAL_SERVER_ERROR,
-                    format!("store error: {error}"),
+                    format!("upstream error: {error}"),
                 )
             }
             Self::NotFound(not_found) => {

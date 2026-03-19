@@ -16,12 +16,13 @@ impl FallthroughUpstream {
 impl Upstream for FallthroughUpstream {
     async fn get(&self, path: &str) -> Result<Option<UpstreamResource>, UpstreamError> {
         let mut first_error = None;
-        for upstream in &self.upstreams {
+        for (index, upstream) in self.upstreams.iter().enumerate() {
             let result = upstream.get(path).await;
             match result {
                 Ok(Some(resource)) => return Ok(Some(resource)),
                 Ok(None) => {}
                 Err(error) => {
+                    tracing::warn!(index, "fallthrough upstream returned error: {error}");
                     first_error.get_or_insert(error);
                 }
             }

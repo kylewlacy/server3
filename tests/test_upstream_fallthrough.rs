@@ -2,10 +2,12 @@ use std::sync::Arc;
 
 use server3::upstream::{Upstream, UpstreamError, fallthrough::FallthroughUpstream};
 
-use server3_test_support::{mockito_http_upstream, upstream_resource_to_string};
+use server3_test_support::{mockito_http_upstream, test_context, upstream_resource_to_string};
 
 #[tokio::test]
 async fn test_fallthrough_empty() {
+    let _ctx = test_context();
+
     let fallthrough = FallthroughUpstream::new(vec![]);
 
     let resource = fallthrough.get("/hello-world").await.unwrap();
@@ -14,6 +16,8 @@ async fn test_fallthrough_empty() {
 
 #[tokio::test]
 async fn test_fallthrough_passthrough_with_one() {
+    let _ctx = test_context();
+
     let mut mock_server = mockito::Server::new_async().await;
     let upstream = mockito_http_upstream(&mock_server);
 
@@ -45,6 +49,8 @@ async fn test_fallthrough_passthrough_with_one() {
 
 #[tokio::test]
 async fn test_fallthrough_returns_first() {
+    let _ctx = test_context();
+
     let mut mock_server_a = mockito::Server::new_async().await;
     let upstream_a = mockito_http_upstream(&mock_server_a);
 
@@ -108,6 +114,8 @@ async fn test_fallthrough_returns_first() {
 
 #[tokio::test]
 async fn test_fallthrough_ignores_errors() {
+    let _ctx = test_context();
+
     let mut mock_server_a = mockito::Server::new_async().await;
     let upstream_a = mockito_http_upstream(&mock_server_a);
 
@@ -141,6 +149,8 @@ async fn test_fallthrough_ignores_errors() {
 
 #[tokio::test]
 async fn test_fallthrough_keeps_error_if_no_successes() {
+    let _ctx = test_context();
+
     let mut mock_server_a = mockito::Server::new_async().await;
     let upstream_a = mockito_http_upstream(&mock_server_a);
 

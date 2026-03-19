@@ -114,6 +114,11 @@ pub enum UpstreamConfig {
     /// - `AWS_REQUEST_CHECKSUM_CALCULATION=WHEN_REQUIRED`
     /// - `AWS_RESPONSE_CHECKSUM_CALCULATION=WHEN_REQUIRED`
     S3(UpstreamS3Config),
+
+    /// Send proxied requests to multiple upstreams, trying one after the
+    /// other. Returns the first successful response. If none succeeded,
+    /// returns an error if any upstream failed, or "not found" otherwise.
+    Fallthrough(UpstreamFallthroughConfig),
 }
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
@@ -163,6 +168,12 @@ pub struct UpstreamS3Config {
     /// A custom endpoint URL to use for the bucket. This is useful for using
     /// other S3-compatible object store providers.
     pub endpoint_url: Option<url::Url>,
+}
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct UpstreamFallthroughConfig {
+    /// A sequence of other upstream configs to try, from first to last.
+    pub upstreams: Vec<UpstreamConfig>,
 }
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]

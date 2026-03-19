@@ -5,20 +5,28 @@ use server3::{
         CacheEnabledRouteRule, CacheMaxAgeRule, CacheRouteRule, CacheRoutes, CachedResourceResponse,
     },
     config::{StorageConfig, UpstreamHttpConfig},
-    upstream::http::HttpUpstream,
+    upstream::{UpstreamResource, http::HttpUpstream},
 };
 use tracing_subscriber::{layer::SubscriberExt as _, util::SubscriberInitExt as _};
 
-pub async fn resource_to_bytes(resource: CachedResourceResponse) -> bstr::BString {
-    let bytes = axum::body::to_bytes(resource.resource.body, 10_000_000)
+pub async fn upstream_resource_to_bytes(resource: UpstreamResource) -> bstr::BString {
+    let bytes = axum::body::to_bytes(resource.body, 10_000_000)
         .await
         .unwrap();
     bytes.to_vec().into()
 }
 
-pub async fn resource_to_string(resource: CachedResourceResponse) -> String {
-    let bytes = resource_to_bytes(resource).await;
+pub async fn upstream_resource_to_string(resource: UpstreamResource) -> String {
+    let bytes = upstream_resource_to_bytes(resource).await;
     String::from_utf8(bytes.into()).unwrap()
+}
+
+pub async fn resource_to_bytes(resource: CachedResourceResponse) -> bstr::BString {
+    upstream_resource_to_bytes(resource.resource).await
+}
+
+pub async fn resource_to_string(resource: CachedResourceResponse) -> String {
+    upstream_resource_to_string(resource.resource).await
 }
 
 pub fn resource_content_type(resource: &CachedResourceResponse) -> Option<&bstr::BStr> {

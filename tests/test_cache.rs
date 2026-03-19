@@ -6,12 +6,10 @@ use server3::{
     config::StorageConfig,
 };
 
-use crate::test_utils::{
+use server3_test_support::{
     cache_config, cache_routes_forever, mockito_http_store, mockito_http_store_with_prefix,
     resource_content_type, resource_to_bytes, resource_to_string, test_context,
 };
-
-mod test_utils;
 
 #[tokio::test]
 async fn test_cache_resource() {

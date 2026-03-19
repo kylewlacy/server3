@@ -1,3 +1,14 @@
+[workspace]
+resolver = "3"
+members = ["crates/*"]
+
+[workspace.dependencies]
+axum = { version = "0.8.8", features = ["macros"] }
+bstr = "1.12.1"
+mockito = "1.7.1"
+tracing-subscriber = { version = "0.3.22", features = ["env-filter"] }
+url = { version = "2.5.7", features = ["serde"] }
+
 [package]
 name = "server3"
 authors = ["Kyle Lacy <rust@kyle.space>"]
@@ -10,7 +21,7 @@ anyhow = "1.0.100"
 async-trait = "0.1.89"
 aws-config = { version = "1.8.15", features = ["behavior-version-latest"] }
 aws-sdk-s3 = "1.125.0"
-axum = { version = "0.8.8", features = ["macros"] }
+axum = { workspace = true }
 bytes = "1.11.0"
 bytesize = { version = "2.3.1", features = ["serde"] }
 clap = { version = "4.5.54", features = ["derive"] }
@@ -37,10 +48,11 @@ tokio-util = { version = "0.7.18", features = ["io"] }
 tower = "0.5.2"
 tower-http = { version = "0.6.8", features = ["trace"] }
 tracing = "0.1.44"
-tracing-subscriber = { version = "0.3.22", features = ["env-filter"] }
-url = { version = "2.5.7", features = ["serde"] }
+tracing-subscriber = { workspace = true }
+url = { workspace = true }
 uuid = { version = "1.19.0", features = ["v4"] }
 
 [dev-dependencies]
-bstr = "1.12.1"
-mockito = "1.7.1"
+bstr = { workspace = true }
+mockito = { workspace = true }
+server3-test-support = { path = "crates/server3-test-support" }

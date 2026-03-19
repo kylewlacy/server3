@@ -1,0 +1,13 @@
+[package]
+name = "server3-test-support"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+axum = { workspace = true }
+bstr = { workspace = true }
+mockito = { workspace = true }
+server3 = { path = "../.." }
+tempfile = "3.24.0"
+tracing-subscriber = { workspace = true }
+url = { workspace = true }

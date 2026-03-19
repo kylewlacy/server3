@@ -2864,6 +2864,7 @@ dependencies = [
  "rlimit",
  "serde",
  "serde_styx",
+ "server3-test-support",
  "tempfile",
  "thiserror 2.0.17",
  "tokio",
@@ -2875,6 +2876,19 @@ dependencies = [
  "tracing-subscriber",
  "url",
  "uuid",
+]
+
+[[package]]
+name = "server3-test-support"
+version = "0.1.0"
+dependencies = [
+ "axum",
+ "bstr",
+ "mockito",
+ "server3",
+ "tempfile",
+ "tracing-subscriber",
+ "url",
 ]
 
 [[package]]
